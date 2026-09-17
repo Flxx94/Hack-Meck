@@ -483,6 +483,7 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
       if (room.botEngineTimer) clearTimeout(room.botEngineTimer);
       for (const p of room.players) if (p.botTimer) clearTimeout(p.botTimer);
     }
+    for (const c of wss.clients) c.terminate();
     wss.close();
     await new Promise((resolve) => server.close(resolve));
   }
