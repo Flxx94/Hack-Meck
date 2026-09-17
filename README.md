@@ -3,7 +3,8 @@
 Webbasiertes Multiplayer-Würfelspiel nach „Heckmeck am Bratwurmeck" (Reiner Knizia / Zoch).
 Spielbar gegen Bots sowie gegen andere Spieler im gleichen lokalen WLAN.
 
-> Stand: Phase 1 (Projektgrundstruktur). Spiel-Logik, Multiplayer, Bots und UI folgen in den Phasen 2–9.
+> Stand: Phase 7 (spielbar: Menü, Lobby, Spiel, Spielende – im Browser gegen Bots oder im LAN).
+> Theme-Anpassung: nur `:root`-Block in `public/style.css` ändern.
 
 ## Installation
 

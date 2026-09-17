@@ -80,7 +80,12 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - `bots.js`: voll implementiert (s. Bot-System); `chooseBotMove` als Alias erhalten.
 - `test/bots.test.js`: 15 Tests – Pick-Gültigkeit (Fuzz), kein Doppel-Pick, Wurm-Sicherung, easy-Zufall, Weiter ohne Wurm, Pflicht-Stopp, hard-vs-easy-Tendenz, bustRisk-Formel, Nehmen+Zugende, Stehlen (hard vom Führenden), TakeOption-Stufen, BUST-Verträglichkeit, volle Spiele je Stufe + normal-vs-hard, WS-Integration (Bot würfelt/beendet automatisch).
 - `npm test` läuft seriell (`--test-concurrency=1`): parallele WS-Suite hing (17.09.2026, >120 s ohne Ergebnis); seriell ~9 s stabil.
-- `public/*` weiter Minimal-Shell (UI folgt Phase 7).
+- `public/*`: volles Spiel-UI (s. Frontend) – Screens Menü/Lobby/Spiel/Ende, rendert nur Server-`STATE`, Würfel als Buttons (gültige klickbar), Grill, Stapel, Punkt-/Wurm-Anzeige, NEED_CHOICE-Modal, BUST/Take-Banner, Event-Feed, Reconnect-Overlay + Auto-Rejoin, Session in localStorage.
+
+## Frontend (implementiert Phase 7)
+- Screens: Menü (Name/Create/Join/Resume) → Lobby (Code, Spieler, Bot-Stärke, Start) → Spiel → Ende (Rangliste). Danach „Neuer Raum" (kein Rematch – offener Punkt).
+- Spielansicht: Spieler-Chips (aktiv pulsiert, Würmer + Top-Portion), Grill (16 Tiles, genommen/verdeckt), Würfel als Buttons (nur gültige klickbar, Wurf-Animation gestaffelt), beiseitegelegt gruppiert, Punkte + Wurmstatus, Roll-/Nehmen-Buttons (kontextsensitiv deaktiviert), Stapel, Event-Feed, NEED_CHOICE-Modal (Grill/Stehlen mit Gegnernamen), BUST/Take-Banner, ERROR-Toasts, Reconnect-Overlay + Auto-Rejoin (3 s) via localStorage-Session.
+- **Theme leicht umstellbar:** alle Farben/Abstände/Radien/Schrift als CSS-Variablen im markierten `:root`-Block in `public/style.css` (keine hartcodierten Farben in Komponenten); Dark Mode via `prefers-color-scheme` überschreibt nur Variablen. Touch-Targets ≥ 44 px, responsives Grid.
 
 ## Fortschritt
 ### Abgeschlossen
@@ -90,11 +95,11 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - [x] Multiplayer (Phase 4)
 - [x] Multiplayer-Tests (Phase 5)
 - [x] Bots (Phase 6)
-- [ ] UI (Phase 7)
+- [x] UI (Phase 7)
 - [ ] Integrationstests (Phase 8)
 - [ ] LAN-Test (Phase 9)
 ### Aktuell
-Phase 6 abgeschlossen (55/55 Tests grün). Nächster Schritt: Phase 7 UI.
+Phase 7 abgeschlossen (55/55 Tests grün, UI verifiziert: Serve-Check + STATE-Feld-Check). Nächster Schritt: Phase 8 Integrationstests.
 ### Bekannte Probleme
 Keine.
 ### Offene Aufgaben

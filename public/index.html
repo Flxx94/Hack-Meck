@@ -8,11 +8,123 @@
 </head>
 <body>
   <main class="app">
-    <h1>🐔 Hack-Meck am Bratwurmeck</h1>
-    <p id="status">Verbinde …</p>
-    <section id="screens">
-      <p>Phase 1: Grundgerüst steht. Spiel-UI folgt in Phase 7.</p>
+    <header class="topbar">
+      <h1>🐔 Hack-Meck</h1>
+      <div class="topbar-right">
+        <span id="roomBadge" class="room-badge hidden"></span>
+        <span id="connDot" class="conn-dot" title="Verbindung"></span>
+      </div>
+    </header>
+
+    <div id="toastWrap" class="toast-wrap" aria-live="polite"></div>
+    <div id="banner" class="banner hidden" role="alert"></div>
+
+    <!-- Startmenü -->
+    <section id="screen-menu" class="screen card">
+      <h2>Startmenü</h2>
+      <label class="field">
+        <span>Dein Name</span>
+        <input id="nameInput" maxlength="20" placeholder="z. B. Florian" autocomplete="nickname" />
+      </label>
+      <div class="btn-row">
+        <button id="btnCreate" class="btn primary">Raum erstellen</button>
+      </div>
+      <div class="divider">oder</div>
+      <label class="field">
+        <span>Raumcode</span>
+        <input id="codeInput" maxlength="4" placeholder="A7K2" autocomplete="off" class="code-input" />
+      </label>
+      <div class="btn-row">
+        <button id="btnJoin" class="btn">Beitreten</button>
+      </div>
+      <div id="resumeBox" class="resume-box hidden">
+        <p id="resumeText"></p>
+        <button id="btnResume" class="btn">Weiter spielen</button>
+      </div>
     </section>
+
+    <!-- Lobby -->
+    <section id="screen-lobby" class="screen card hidden">
+      <h2>Lobby</h2>
+      <p>Spielcode: <strong id="lobbyCode" class="code-big"></strong></p>
+      <ul id="lobbyPlayers" class="player-list"></ul>
+      <div class="btn-row">
+        <select id="botDifficulty" aria-label="Bot-Stärke">
+          <option value="easy">Bot: Einfach</option>
+          <option value="normal" selected>Bot: Normal</option>
+          <option value="hard">Bot: Schwer</option>
+        </select>
+        <button id="btnAddBot" class="btn">Bot hinzufügen</button>
+      </div>
+      <div class="btn-row">
+        <button id="btnStart" class="btn primary">Spiel starten</button>
+        <button id="btnLeaveLobby" class="btn ghost">Verlassen</button>
+      </div>
+      <p id="lobbyHint" class="hint">Mindestens 2 Spieler nötig (Bots zählen mit).</p>
+    </section>
+
+    <!-- Spiel -->
+    <section id="screen-game" class="screen hidden">
+      <div id="playerBar" class="player-bar"></div>
+      <div class="card">
+        <h2>Bratwurmgrill</h2>
+        <div id="grill" class="grill"></div>
+      </div>
+      <div class="table-wrap">
+        <div class="card turn-card">
+          <h2 id="turnTitle">Zug</h2>
+          <p id="scoreLine" class="score-line"></p>
+          <p id="wormLine" class="worm-line"></p>
+          <h3>Geworfene Würfel</h3>
+          <div id="rolledDice" class="dice-row"></div>
+          <h3>Beiseitegelegt</h3>
+          <div id="setAside" class="dice-row"></div>
+          <div class="btn-row">
+            <button id="btnRoll" class="btn primary">🎲 Würfeln</button>
+            <button id="btnTake" class="btn">Nehmen / Beenden</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Stapel</h2>
+          <div id="stacks" class="stacks"></div>
+          <h2>Ereignisse</h2>
+          <ul id="eventFeed" class="event-feed"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Spielende -->
+    <section id="screen-over" class="screen card hidden">
+      <h2 id="overTitle">Spielende</h2>
+      <table id="rankingTable" class="ranking">
+        <thead><tr><th>Platz</th><th>Spieler</th><th>Portionen</th><th>🐛 Würmer</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="btn-row">
+        <button id="btnNewRoom" class="btn primary">Neuer Raum</button>
+      </div>
+    </section>
+
+    <!-- Verbindungsverlust -->
+    <div id="connOverlay" class="overlay hidden">
+      <div class="card">
+        <h2>⚠ Verbindung verloren</h2>
+        <p>Versuche erneut zu verbinden …</p>
+        <div class="btn-row">
+          <button id="btnRetry" class="btn primary">Jetzt erneut verbinden</button>
+          <button id="btnToMenu" class="btn ghost">Zum Menü</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grill-oder-Steal-Wahl -->
+    <div id="choiceOverlay" class="overlay hidden">
+      <div class="card">
+        <h2>Exakt passend – wähle!</h2>
+        <p id="choiceText"></p>
+        <div id="choiceBtns" class="btn-row"></div>
+      </div>
+    </div>
   </main>
   <script src="app.js"></script>
 </body>
