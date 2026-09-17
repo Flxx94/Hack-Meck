@@ -48,15 +48,17 @@ Die PDF liegt bewusst NICHT im Git (`.gitignore: *.pdf`, 2,2 MB Binary).
 }
 ```
 
-## WebSocket-Protokoll (Plan, final ab Phase 4)
-Client → Server: `create, join, addBot, start, roll, pick {value}, take {choice?}, stop, rejoin {token}`
-Server → Client: `PLAYER_JOINED, PLAYER_LEFT, GAME_STARTED, TURN_STARTED, DICE_ROLLED, DICE_SELECTED, BUST, TILE_TAKEN, TURN_ENDED, GAME_OVER, ERROR` + Voll-State nach jeder Mutation.
-Phase 1: nur `WELCOME` + `ECHO`.
+## WebSocket-Protokoll (final, implementiert Phase 4)
+Client → Server (JSON, Feld `t`): `create {name}, join {code,name}, rejoin {code,token}, addBot {difficulty?}, start, roll, pick {value}, take {choice?}, stop`
+Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOINED, PLAYER_LEFT, GAME_STARTED, TURN_STARTED {playerId}, DICE_ROLLED {rolled}, DICE_SELECTED, BUST, TILE_TAKEN, TURN_ENDED, GAME_OVER {ranking,winner}, NEED_CHOICE {score,options} (nur an Entscheider), STATE (Voll-State nach jeder Mutation), ERROR {message}`.
+`STATE` enthält `code, status, players[], game{grill, players, currentPlayer(Id), turn{phase,rolled,setAside,picked,score,hasWorm,validPicks,remaining,over}, over, winner, ranking}`.
 
-## Serverlogik (Plan)
-- Einzige Quelle der Wahrheit: Würfel, Punkte, Reihenfolge, Grill, Besitz, BUST, Ende, Gewinner
-- Jede Aktion validieren: am Zug? Phase ok? Wert wählbar/nicht doppelt? Portion vorhanden/nehmbar?
-- Reconnect via `reconnectToken` (5 Min), 60 s Schutz im eigenen Zug → danach Bot-Ersatz, nie blockieren
+## Serverlogik (implementiert Phase 4)
+- Einzige Quelle der Wahrheit: Würfel, Punkte, Reihenfolge, Grill, Besitz, BUST, Ende, Gewinner (alles via game.js; `game.js`-Errors → `ERROR`-Nachricht)
+- Jede Aktion validiert: Raum? Spieler bekannt? Lobby vs. laufend? aktueller Spieler? Bots spielen automatisch (Aktionen abgelehnt)
+- `stop/take` ohne Pick → `ERROR` (kein BUST durch Fehlklick); `take` ohne Wahl bei Ambiguität → `NEED_CHOICE` nur an Entscheider (kein State-Wechsel)
+- Reconnect via `reconnectToken` (5 Min, `tokenExpiry` bei Disconnect), 60 s Schutz im eigenen Zug → danach Bot-Ersatz (`(Bot)`-Suffix, `syncGamePlayers`), nie blockieren; leere Räume mit abgelaufenen Tokens werden minütlich gelöscht
+- Raumcode: 4-stellig, `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (ohne I/O/0/1); Export `createHeckMeckServer(port,host)` für Tests, Direktstart lauscht `0.0.0.0:3000`
 
 ## Bot-System (Plan ab Phase 6)
 easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Erwartungswert, BUST-Risiko, Grill+Gegner, Restwürfel). Nur via Game-Core-API, 800 ms Timer serverseitig.
@@ -70,24 +72,25 @@ easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Er
 - `rollDice(game, {dice, rng})`: Würfel injizierbar (deterministische Tests), Standard `Math.random`
 - Ungültige Aktionen werfen `Error` (Server mappt auf `ERROR`-Nachricht); `bust()` ist idempotent (`alreadyOver`), `takeTile` bei Grill+Gegner-Ambiguität ohne Wahl verändert nichts (`needChoice`)
 
-## Aktuelle Implementierung (Phase 3)
-- `game.js`: Voll-Core – `createGame/startGame/rollDice/canPick/pickValue/validPickValues/turnScore/hasWorm/remainingDice/canTake/takeTile/endTurn/stealTile/bust/checkGameOver/calculateFinalScore/playerWorms/playerBestTile` (+ Konstanten/Helfer). State: `{grill, players[{id,name,stack,isBot,connected}], currentPlayer, turn{active,rolled,setAside,picked,phase,over,bust,result}, over, winner, ranking}`.
-- `test/game.test.js`: 29 Tests, alle grün – inkl. Thomas-Beispiel (27 vom Grill), Birgit-Fehlwurf, Auto-BUST (nur gewählte Werte, nur Würmer), Wurm-Pflicht, Steal direkt + via take, needChoice beide Wahlen, nächstniedrigere, keine-niedrigere→BUST, BUST-Sonderfälle (ohne eigene / höchste zurückgelegt), Idempotenz, alle-8-beiseite, Spielende+Rangliste, Gleichstand.
-- Rest Phase 1 unverändert: `server.js` (statisch + WS-Echo + LAN-Log), `bots.js` (Stub), `public/*` (Minimal-Shell)
+## Aktuelle Implementierung (Phase 5)
+- `game.js`: Voll-Core (unverändert seit Phase 3, 29 Tests grün).
+- `server.js`: Räume + Protokoll (s. oben) – Erstellen/Beitreten/Rejoin, Lobby (addBot zählt für 2-Spieler-Minimum), Start, validierte Züge, `STATE` nach jeder Mutation, Disconnect/Reconnect inkl. 60-s-Bot-Ersatz. Bot-Züge selbst folgen in Phase 6 (`bots.js` weiter Stub, `chooseBotMove` wirft noch).
+- `test/server.test.js`: 11 Tests via echte WS-Clients (ephemerer Port) – Create/Join/Code-Format, falscher Code, 7er-Limit, Startregeln, Beitritt nach Start, Fremdzug-Block, Stop-ohne-Pick-ERROR, Roll/Pick-Sync an beide Clients, kompletter Zug bis Wurm+Stop, Reconnect via Token, Bot-als-2.-Spieler.
+- `public/*` weiter Minimal-Shell (UI folgt Phase 7).
 
 ## Fortschritt
 ### Abgeschlossen
 - [x] Projektstruktur (Phase 1)
 - [x] Game Core (Phase 2)
 - [x] Game-Core-Tests (Phase 3)
-- [ ] Multiplayer (Phase 4)
-- [ ] Multiplayer-Tests (Phase 5)
+- [x] Multiplayer (Phase 4)
+- [x] Multiplayer-Tests (Phase 5)
 - [ ] Bots (Phase 6)
 - [ ] UI (Phase 7)
 - [ ] Integrationstests (Phase 8)
 - [ ] LAN-Test (Phase 9)
 ### Aktuell
-Phase 2+3 abgeschlossen (29/29 Tests grün). Nächster Schritt: Phase 4 HTTP-Server + WebSocket + Räume.
+Phase 4+5 abgeschlossen (40/40 Tests grün). Nächster Schritt: Phase 6 Bots.
 ### Bekannte Probleme
 Keine.
 ### Offene Aufgaben
