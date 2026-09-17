@@ -66,15 +66,20 @@ easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Er
 - PDF aus Git ausgeschlossen (Binary), Regeln hier + in Tests dokumentiert
 - Branch `main` (remote hatte `main` mit 1 Commit; lokales leeres `master` verworfen)
 - Repo-Name `Hack-Meck` (GitHub) vs. Ordner `Heck_Meck` beibehalten, nicht umbenannt
+- `takeTile/endTurn` nur in Phase `roll` (nach Pick, vor nächstem Wurf = normaler Stop) und `take` (alle 8 beiseite); in Phase `pick` muss erst der Wurf verwertet werden. Fix am 17.09.2026: 11 Tests fanden falschen Phasen-Guard (`pick|take` statt `roll|take`).
+- `rollDice(game, {dice, rng})`: Würfel injizierbar (deterministische Tests), Standard `Math.random`
+- Ungültige Aktionen werfen `Error` (Server mappt auf `ERROR`-Nachricht); `bust()` ist idempotent (`alreadyOver`), `takeTile` bei Grill+Gegner-Ambiguität ohne Wahl verändert nichts (`needChoice`)
 
-## Aktuelle Implementierung (Phase 1)
-- `package.json` (ws, start/test), `.gitignore`, `server.js` (statisch + WS-Echo + LAN-Log), `game.js` (Konstanten + wormsForTile/dicePoints/createGrill), `bots.js` (Stub), `public/*` (Minimal-Shell, WS via location.host), `test/game.test.js` (Smoke: 8 Würfel, Wurm=5, 16 Portionen)
+## Aktuelle Implementierung (Phase 3)
+- `game.js`: Voll-Core – `createGame/startGame/rollDice/canPick/pickValue/validPickValues/turnScore/hasWorm/remainingDice/canTake/takeTile/endTurn/stealTile/bust/checkGameOver/calculateFinalScore/playerWorms/playerBestTile` (+ Konstanten/Helfer). State: `{grill, players[{id,name,stack,isBot,connected}], currentPlayer, turn{active,rolled,setAside,picked,phase,over,bust,result}, over, winner, ranking}`.
+- `test/game.test.js`: 29 Tests, alle grün – inkl. Thomas-Beispiel (27 vom Grill), Birgit-Fehlwurf, Auto-BUST (nur gewählte Werte, nur Würmer), Wurm-Pflicht, Steal direkt + via take, needChoice beide Wahlen, nächstniedrigere, keine-niedrigere→BUST, BUST-Sonderfälle (ohne eigene / höchste zurückgelegt), Idempotenz, alle-8-beiseite, Spielende+Rangliste, Gleichstand.
+- Rest Phase 1 unverändert: `server.js` (statisch + WS-Echo + LAN-Log), `bots.js` (Stub), `public/*` (Minimal-Shell)
 
 ## Fortschritt
 ### Abgeschlossen
 - [x] Projektstruktur (Phase 1)
-- [ ] Game Core (Phase 2)
-- [ ] Game-Core-Tests (Phase 3)
+- [x] Game Core (Phase 2)
+- [x] Game-Core-Tests (Phase 3)
 - [ ] Multiplayer (Phase 4)
 - [ ] Multiplayer-Tests (Phase 5)
 - [ ] Bots (Phase 6)
@@ -82,11 +87,11 @@ easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Er
 - [ ] Integrationstests (Phase 8)
 - [ ] LAN-Test (Phase 9)
 ### Aktuell
-Phase 1 abgeschlossen, wartet auf Commit/Push. Nächster Schritt: Phase 2 Game Core.
+Phase 2+3 abgeschlossen (29/29 Tests grün). Nächster Schritt: Phase 4 HTTP-Server + WebSocket + Räume.
 ### Bekannte Probleme
-Keine. Offen: PDF-Nachlieferung bereits erfolgt und validiert (17.09.2026) – keine Regel-Deltas zum Task-Text gefunden.
+Keine.
 ### Offene Aufgaben
-Phasen 2–9 gemäß Aufgabe.
+Phasen 4–9 gemäß Aufgabe.
 
 ## Wichtige Tests
 `npm test` (node --test test/). Phase-1-Smoke: Würfel/Wurm/Grill. Ab Phase 3: alle Edge Cases (nur gewählte Werte → Auto-BUST, Wurm doppelt → BUST, BUST ohne eigene Portion, höchste-zurückgelegt-Sonderfall, nächstniedrigere, keine-niedrigere → BUST, Steal, Spielende, Gleichstand).
