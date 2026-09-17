@@ -87,6 +87,19 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - Spielansicht: Spieler-Chips (aktiv pulsiert, Würmer + Top-Portion), Grill (16 Tiles, genommen/verdeckt), Würfel als Buttons (nur gültige klickbar, Wurf-Animation gestaffelt), beiseitegelegt gruppiert, Punkte + Wurmstatus, Roll-/Nehmen-Buttons (kontextsensitiv deaktiviert), Stapel, Event-Feed, NEED_CHOICE-Modal (Grill/Stehlen mit Gegnernamen), BUST/Take-Banner, ERROR-Toasts, Reconnect-Overlay + Auto-Rejoin (3 s) via localStorage-Session.
 - **Theme leicht umstellbar:** alle Farben/Abstände/Radien/Schrift als CSS-Variablen im markierten `:root`-Block in `public/style.css` (keine hartcodierten Farben in Komponenten); Dark Mode via `prefers-color-scheme` überschreibt nur Variablen. Touch-Targets ≥ 44 px, responsives Grid.
 
+## Aktuelle Implementierung (Phase 8)
+- `test/integration.test.js`: 2 End-to-End-Spiele über WS – (1) 2 Menschen bis `GAME_OVER` (Strategie: Wurm sichern, weiter bis 21+, NEED_CHOICE→Grill) mit Validierung von Ranglisten-Sortierung, Wurm-Nachrechnung aus Stapeln, leerem Grill, Grill-Konsistenz und Aktionen-nach-Ende→`ERROR`; (2) Mensch + normal-Bot bis `GAME_OVER` (Bot über 800-ms-Engine, `waitHumanTurn` mit Silence-Erkennung).
+- Test-Helfer-Disziplin: `waitAny` (kein Nachrichtenklau durch verwaiste Racer), Sequenznummern statt Queue-Indizes (splice-sicher), `mark` vor Senden. `server.close()` terminiert jetzt Clients (kein Hängen der Suite).
+- Suite: 57/57 grün seriell (~3 Min, Bot-Vollspiel dominiert).
+
+## LAN-Test (Phase 9, Stand 17.09.2026)
+- Verifiziert lokal: Server lauscht `0.0.0.0:3000`, loggt LAN-IPs (z. B. `http://192.168.111.138:3000`), WS nutzt gleichen Host/Port.
+- Echter Mehrgeräte-Test steht aus (nur 1 Rechner verfügbar). Checkliste:
+  1. `npm start` auf Host, LAN-IP aus Log ablesen
+  2. Gleiches WLAN auf allen Geräten prüfen
+  3. `http://<LAN-IP>:3000` auf 2+ Geräten öffnen (ggf. Windows-Firewall: Port 3000 freigeben)
+  4. Raum erstellen, Code teilen, beitreten, Spiel mit Bots + Menschen bis Ende spielen
+
 ## Fortschritt
 ### Abgeschlossen
 - [x] Projektstruktur (Phase 1)
@@ -96,10 +109,10 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - [x] Multiplayer-Tests (Phase 5)
 - [x] Bots (Phase 6)
 - [x] UI (Phase 7)
-- [ ] Integrationstests (Phase 8)
-- [ ] LAN-Test (Phase 9)
+- [x] Integrationstests (Phase 8)
+- [ ] LAN-Test mit mehreren Geräten (Phase 9, Checkliste bereit)
 ### Aktuell
-Phase 7 abgeschlossen (55/55 Tests grün, UI verifiziert: Serve-Check + STATE-Feld-Check). Nächster Schritt: Phase 8 Integrationstests.
+Phase 8 abgeschlossen (57/57 Tests grün). Offen: echter LAN-Test mit 2+ Geräten (Phase 9).
 ### Bekannte Probleme
 Keine.
 ### Offene Aufgaben
