@@ -1,1 +1,80 @@
-# Hack-Meck
+# Hack-Meck am Bratwurmeck
+
+Webbasiertes Multiplayer-Würfelspiel nach „Heckmeck am Bratwurmeck" (Reiner Knizia / Zoch).
+Spielbar gegen Bots sowie gegen andere Spieler im gleichen lokalen WLAN.
+
+> Stand: Phase 1 (Projektgrundstruktur). Spiel-Logik, Multiplayer, Bots und UI folgen in den Phasen 2–9.
+
+## Installation
+
+```bash
+npm install
+```
+
+Benötigt: Node.js 24+ (`node --version`), npm 11+.
+
+## Start
+
+```bash
+npm start
+```
+
+Danach öffnen:
+
+- Lokal: http://localhost:3000
+- Im WLAN: `http://<LAN-IP>:3000` (der Server loggt beim Start alle erkannten LAN-IPs)
+
+Der WebSocket nutzt automatisch denselben Host/Port (kein hardcoded localhost).
+
+## Spiel gegen Bots / LAN-Multiplayer
+
+Folgt ab Phase 4 (Räume mit 4-stelligem Code) bzw. Phase 6 (Bots). Geplant:
+
+- Raum erstellen, Code teilen (z. B. `A7K2`), bis zu 7 Spieler pro Raum
+- Bots hinzufügen (easy / normal / hard)
+- Reconnect via Token (5 Minuten)
+
+## Projektstruktur
+
+```text
+server.js        HTTP (statisch) + WebSocket + Räume (einzige Quelle der Wahrheit)
+game.js          reine Spiellogik, kein HTTP/WS/DOM – voll testbar
+bots.js          Bot-Entscheidungen nur via game.js-API
+public/          index.html, style.css, app.js (Vanilla, kein Build)
+test/            node:test-Suiten (game, bots, server)
+AGENTS.md        dauerhafter Projektkontext
+```
+
+Architektur: `Browser ↔ WebSocket ↔ server.js ↔ game.js`, zusätzlich `server.js ↔ bots.js ↔ game.js`.
+
+## Tests
+
+```bash
+npm test   # node --test test/
+```
+
+Phase 1: Smoke-Tests (8 Würfel, Wurm = 5 Punkte, 16 Portionen mit Standard-Wurmverteilung).
+Ab Phase 3: alle Edge Cases (Auto-BUST, Doppelwahl, BUST-Sonderfälle, Steal, Spielende, Gleichstand).
+
+## Regeln (Kurzfassung)
+
+2–7 Spieler, 16 Portionen 21–36, 8 Würfel (1–5 + Wurm = 5 Punkte).
+Pro Wurf genau ein noch nicht gewählter Wert, alle Würfel dieses Werts beiseitelegen.
+Mindestens 1 Wurm nötig. Exakt → nehmen/stehlen (bei Grill + Gegner gleichzeitig wählt der Spieler),
+sonst nächstniedrigere Grillportion, sonst Fehlwurf (Rücklage + höchste Grillportion umdrehen, mit Sonderfällen).
+Ende: keine offene Grillportion mehr; meiste Würmer gewinnt, Gleichstand → höchste Einzelportion.
+Vollständige Regeln: siehe Spielanleitung (PDF, lokal) und `AGENTS.md`.
+
+## Repository
+
+https://github.com/Flxx94/Hack-Meck (Branch `main`)
+
+## Bekannte Einschränkungen
+
+- Max. 7 Spieler pro Raum
+- Keine externen Dienste nach `npm install` nötig
+- Touch-Targets ≥ 44×44 px (ab Phase 7)
+
+## Lizenz
+
+GPL-3.0-only (siehe LICENSE).
