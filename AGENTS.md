@@ -60,8 +60,10 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - Reconnect via `reconnectToken` (5 Min, `tokenExpiry` bei Disconnect), 60 s Schutz im eigenen Zug → danach Bot-Ersatz (`(Bot)`-Suffix, `syncGamePlayers`), nie blockieren; leere Räume mit abgelaufenen Tokens werden minütlich gelöscht
 - Raumcode: 4-stellig, `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (ohne I/O/0/1); Export `createHeckMeckServer(port,host)` für Tests, Direktstart lauscht `0.0.0.0:3000`
 
-## Bot-System (Plan ab Phase 6)
-easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Erwartungswert, BUST-Risiko, Grill+Gegner, Restwürfel). Nur via Game-Core-API, 800 ms Timer serverseitig.
+## Bot-System (implementiert Phase 6)
+- `bots.js` (reine Entscheidungen, `rng` injizierbar): `choosePick` (easy zufällig / normal+hard sichern Wurm zuerst, normal greedy nach Anzahl, hard bei ≥26 Würfel-schonend sonst max. Anzahl×Punkte), `decideStop` (easy 35%-Stopp ab 21 / normal Schwelle `21+Restwürfel` + exakte/Steals früh sichern + Risiko>0,6 / hard BUST-Risiko vs. Portionswert, Stopp ab 30, needChoice immer sichern), `chooseTakeOption` (easy zufällig, normal+hard stehlen, hard vom Führenden), `bustRisk=(gewählte/6)^rest`, `playBotTurn` (kompletter Zug für Tests/Simulation).
+- Server-Engine: `scheduleBot/botStep` – genau ein Timer pro Raum, ~800 ms zwischen Aktionen, Mensch+Bot teilen `performRoll/performPick/performTake`; Bot-Crash führt nie zum Spiel-Crash (Fallback: Zug sicher beenden). Trigger: nach `start`, jeder Aktion, 60-s-Bot-Ersatz. `close()` räumt alle Timer weg.
+- Nur via Game-Core-API, nie direkte State-Manipulation.
 
 ## Designentscheidungen
 - CommonJS (keine ESM-Risiken mit ws + node:test)
@@ -72,10 +74,12 @@ easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Er
 - `rollDice(game, {dice, rng})`: Würfel injizierbar (deterministische Tests), Standard `Math.random`
 - Ungültige Aktionen werfen `Error` (Server mappt auf `ERROR`-Nachricht); `bust()` ist idempotent (`alreadyOver`), `takeTile` bei Grill+Gegner-Ambiguität ohne Wahl verändert nichts (`needChoice`)
 
-## Aktuelle Implementierung (Phase 5)
+## Aktuelle Implementierung (Phase 6)
 - `game.js`: Voll-Core (unverändert seit Phase 3, 29 Tests grün).
-- `server.js`: Räume + Protokoll (s. oben) – Erstellen/Beitreten/Rejoin, Lobby (addBot zählt für 2-Spieler-Minimum), Start, validierte Züge, `STATE` nach jeder Mutation, Disconnect/Reconnect inkl. 60-s-Bot-Ersatz. Bot-Züge selbst folgen in Phase 6 (`bots.js` weiter Stub, `chooseBotMove` wirft noch).
-- `test/server.test.js`: 11 Tests via echte WS-Clients (ephemerer Port) – Create/Join/Code-Format, falscher Code, 7er-Limit, Startregeln, Beitritt nach Start, Fremdzug-Block, Stop-ohne-Pick-ERROR, Roll/Pick-Sync an beide Clients, kompletter Zug bis Wurm+Stop, Reconnect via Token, Bot-als-2.-Spieler.
+- `server.js`: + Bot-Engine (`scheduleBot/botStep`, `perform*`-Refaktor, Timer-Cleanup in `close()`); Rest unverändert (Räume, Protokoll, Reconnect).
+- `bots.js`: voll implementiert (s. Bot-System); `chooseBotMove` als Alias erhalten.
+- `test/bots.test.js`: 15 Tests – Pick-Gültigkeit (Fuzz), kein Doppel-Pick, Wurm-Sicherung, easy-Zufall, Weiter ohne Wurm, Pflicht-Stopp, hard-vs-easy-Tendenz, bustRisk-Formel, Nehmen+Zugende, Stehlen (hard vom Führenden), TakeOption-Stufen, BUST-Verträglichkeit, volle Spiele je Stufe + normal-vs-hard, WS-Integration (Bot würfelt/beendet automatisch).
+- `npm test` läuft seriell (`--test-concurrency=1`): parallele WS-Suite hing (17.09.2026, >120 s ohne Ergebnis); seriell ~9 s stabil.
 - `public/*` weiter Minimal-Shell (UI folgt Phase 7).
 
 ## Fortschritt
@@ -85,12 +89,12 @@ easy (zufällig), normal (Würmer/Punkte/Portionen/Risiko/Restwürfel), hard (Er
 - [x] Game-Core-Tests (Phase 3)
 - [x] Multiplayer (Phase 4)
 - [x] Multiplayer-Tests (Phase 5)
-- [ ] Bots (Phase 6)
+- [x] Bots (Phase 6)
 - [ ] UI (Phase 7)
 - [ ] Integrationstests (Phase 8)
 - [ ] LAN-Test (Phase 9)
 ### Aktuell
-Phase 4+5 abgeschlossen (40/40 Tests grün). Nächster Schritt: Phase 6 Bots.
+Phase 6 abgeschlossen (55/55 Tests grün). Nächster Schritt: Phase 7 UI.
 ### Bekannte Probleme
 Keine.
 ### Offene Aufgaben
