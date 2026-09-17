@@ -26,7 +26,10 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { WebSocketServer } = require('ws');
 const game = require('./game');
-const { DIFFICULTIES } = require('./bots');
+const bots = require('./bots');
+const { DIFFICULTIES } = bots;
+
+const BOT_MOVE_DELAY_MS = 800;
 
 const PORT = 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -215,6 +218,112 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
     return player;
   }
 
+  // ---------- Spielzüge (Mensch + Bot teilen sich diese) ----------
+
+  function performRoll(room) {
+    const res = game.rollDice(room.game);
+    if (res.bust) {
+      broadcast(room, { t: 'BUST', ...res });
+    } else {
+      broadcast(room, { t: 'DICE_ROLLED', rolled: res.rolled });
+    }
+    if (!room.game.over) broadcast(room, { t: 'TURN_STARTED', playerId: currentPlayerId(room) });
+    if (room.game.over) {
+      room.status = 'over';
+      broadcast(room, { t: 'GAME_OVER', ranking: room.game.ranking, winner: room.game.winner });
+    }
+    sendState(room, res.bust ? 'BUST' : 'DICE_ROLLED');
+    scheduleBot(room);
+  }
+
+  function performPick(room, value) {
+    const res = game.pickValue(room.game, value);
+    broadcast(room, { t: 'DICE_SELECTED', ...res });
+    sendState(room, 'DICE_SELECTED');
+    scheduleBot(room);
+  }
+
+  /** ws ist gesetzt bei menschlichen Spielern (für NEED_CHOICE), Bots bekommen Default. */
+  function performTake(room, choice, ws = null) {
+    const res = game.takeTile(room.game, choice);
+    if (res.needChoice) {
+      if (ws) {
+        send(ws, { t: 'NEED_CHOICE', score: res.score, options: res.options });
+        return;
+      }
+      // Bot ohne Wahl (sollte nicht vorkommen): Grill bevorzugen.
+      performTake(room, { source: 'grill' });
+      return;
+    }
+    if (res.bust) {
+      broadcast(room, { t: 'BUST', ...res });
+    } else {
+      broadcast(room, { t: 'TILE_TAKEN', ...res });
+    }
+    if (room.game.over) {
+      room.status = 'over';
+      broadcast(room, { t: 'GAME_OVER', ranking: room.game.ranking, winner: room.game.winner });
+    } else {
+      broadcast(room, { t: 'TURN_ENDED' });
+      broadcast(room, { t: 'TURN_STARTED', playerId: currentPlayerId(room) });
+    }
+    sendState(room, res.bust ? 'BUST' : 'TILE_TAKEN');
+    scheduleBot(room);
+  }
+
+  // ---------- Bot-Engine (nur Timer hier, Logik in bots.js) ----------
+
+  function botDifficulty(room) {
+    const p = room.players.find((x) => x.id === currentPlayerId(room));
+    return p && p.botDifficulty ? p.botDifficulty : 'normal';
+  }
+
+  function currentIsBot(room) {
+    if (room.status !== 'playing' || !room.game || room.game.over) return false;
+    const p = room.players.find((x) => x.id === currentPlayerId(room));
+    return !!(p && p.isBot);
+  }
+
+  /** Plant den nächsten Bot-Schritt (~800 ms), genau ein Timer pro Raum. */
+  function scheduleBot(room) {
+    if (room.botEngineTimer || !currentIsBot(room)) return;
+    room.botEngineTimer = setTimeout(() => {
+      room.botEngineTimer = null;
+      botStep(room);
+    }, BOT_MOVE_DELAY_MS);
+    if (room.botEngineTimer.unref) room.botEngineTimer.unref();
+  }
+
+  /** Führt genau eine Bot-Aktion aus und plant die nächste (Verkettung). */
+  function botStep(room) {
+    if (!currentIsBot(room)) return;
+    try {
+      const gm = room.game;
+      const level = botDifficulty(room);
+      if (gm.turn.phase === 'pick') {
+        performPick(room, bots.choosePick(gm, level, Math.random));
+      } else if (gm.turn.phase === 'take' || gm.turn.picked.length > 0) {
+        const dec = bots.decideStop(gm, level, Math.random);
+        if (dec.stop || gm.turn.phase === 'take') {
+          performTake(room, dec.choice);
+        } else {
+          performRoll(room);
+        }
+      } else {
+        performRoll(room);
+      }
+    } catch {
+      // Ein Bot darf ein Spiel niemals crashen: Zug sicher beenden.
+      try {
+        if (room.game && !room.game.over && !room.game.turn.over) {
+          if (room.game.turn.picked.length > 0) performTake(room, { source: 'grill' });
+          else room.game.turn.phase = 'roll';
+        }
+      } catch { /* aufgeben, nächster Zug regelt */ }
+      scheduleBot(room);
+    }
+  }
+
   // ---------- Nachrichten-Handler ----------
 
   function handle(ws, msg) {
@@ -270,33 +379,21 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
         broadcast(room, { t: 'GAME_STARTED' });
         broadcast(room, { t: 'TURN_STARTED', playerId: currentPlayerId(room) });
         sendState(room, 'TURN_STARTED');
+        scheduleBot(room);
         break;
       }
       case 'roll': {
         const room = rooms.get(ws.roomCode);
         if (!room) throw new Error('Kein Raum.');
         requireActor(room, ws);
-        const res = game.rollDice(room.game);
-        if (res.bust) {
-          broadcast(room, { t: 'BUST', ...res });
-        } else {
-          broadcast(room, { t: 'DICE_ROLLED', rolled: res.rolled });
-        }
-        if (!room.game.over) broadcast(room, { t: 'TURN_STARTED', playerId: currentPlayerId(room) });
-        if (room.game.over) {
-          room.status = 'over';
-          broadcast(room, { t: 'GAME_OVER', ranking: room.game.ranking, winner: room.game.winner });
-        }
-        sendState(room, res.bust ? 'BUST' : 'DICE_ROLLED');
+        performRoll(room);
         break;
       }
       case 'pick': {
         const room = rooms.get(ws.roomCode);
         if (!room) throw new Error('Kein Raum.');
         requireActor(room, ws);
-        const res = game.pickValue(room.game, msg.value);
-        broadcast(room, { t: 'DICE_SELECTED', ...res });
-        sendState(room, 'DICE_SELECTED');
+        performPick(room, msg.value);
         break;
       }
       case 'take':
@@ -305,24 +402,7 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
         if (!room) throw new Error('Kein Raum.');
         requireActor(room, ws);
         if (room.game.turn.picked.length === 0) throw new Error('Noch nichts gewählt – erst würfeln und wählen.');
-        const res = game.takeTile(room.game, msg.choice);
-        if (res.needChoice) {
-          send(ws, { t: 'NEED_CHOICE', score: res.score, options: res.options });
-          break;
-        }
-        if (res.bust) {
-          broadcast(room, { t: 'BUST', ...res });
-        } else {
-          broadcast(room, { t: 'TILE_TAKEN', ...res });
-        }
-        if (room.game.over) {
-          room.status = 'over';
-          broadcast(room, { t: 'GAME_OVER', ranking: room.game.ranking, winner: room.game.winner });
-        } else {
-          broadcast(room, { t: 'TURN_ENDED' });
-          broadcast(room, { t: 'TURN_STARTED', playerId: currentPlayerId(room) });
-        }
-        sendState(room, res.bust ? 'BUST' : 'TILE_TAKEN');
+        performTake(room, msg.choice, ws);
         break;
       }
       default:
@@ -353,6 +433,7 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
         syncGamePlayers(room);
         broadcast(room, { t: 'PLAYER_JOINED', playerId: player.id, name: player.name });
         sendState(room, 'PLAYER_JOINED');
+        scheduleBot(room);
       }, TURN_GRACE_MS);
       if (player.botTimer.unref) player.botTimer.unref();
     }
@@ -398,6 +479,10 @@ function createHeckMeckServer(port = PORT, host = '0.0.0.0') {
 
   async function close() {
     clearInterval(cleaner);
+    for (const room of rooms.values()) {
+      if (room.botEngineTimer) clearTimeout(room.botEngineTimer);
+      for (const p of room.players) if (p.botTimer) clearTimeout(p.botTimer);
+    }
     wss.close();
     await new Promise((resolve) => server.close(resolve));
   }
