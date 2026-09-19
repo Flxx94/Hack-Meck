@@ -1,14 +1,14 @@
 'use strict';
 
-/* Hack-Meck Client (Spieltisch-UI).
+/* Hack-Meck Client (Light-Minimal-UI nach Referenzgrafik).
  * Rendert ausschließlich den Server-State (STATE-Nachrichten).
  * Verbindung: WebSocket auf gleichem Host/Port (LAN-fähig, kein hardcoded Host).
  * Session (Code + Token) liegt in localStorage für Reconnect.
  *
- * Match-Darstellung als Brettspieltisch: Der Grill bleibt immer in der
- * Mitte, das EINE Würfelfeld (#diceTable) wandert animiert zum jeweils
- * aktiven Spieler (oben = Gegner, unten = ich). Spiellogik, Protokoll
- * und Server-Autorität bleiben unberührt – nur Darstellung.
+ * Layout: Status-Pill oben, Spieler in Eck-Panels (ich unten-links),
+ * Gegner-Würfel-Schale oben, Wurmkarten mittig, eigene Schale unten,
+ * das EINE Würfelfeld (#diceTable) wandert animiert zum aktiven Spieler.
+ * Spiellogik, Protokoll und Server-Autorität bleiben unberührt.
  */
 
 const $ = (sel) => document.querySelector(sel);
@@ -32,7 +32,42 @@ const S = {
   pendingFly: null, // Kartenflug: { kind, value, fromRect } – Ziel folgt nach STATE-Render
   wasMine: false, // für „DU BIST DRAN“-Flash bei Zugwechsel
   overShown: false, // GEWONNEN!-Flash nur einmal pro Spielende
+  lastPillText: '', // Status-Pill: nur bei Wechsel animieren
+  grillKeys: null, // offene Grillwerte des letzten Renders (nur neue Karten animieren)
+  setAsideKey: '', // Beiseite-Stand des letzten Renders (Pop nur bei Änderung)
 };
+
+/* Pastell-Avatare (Initialen): gedeckt + dezent, passend zur ruhigen Palette. */
+const AVATARS = [
+  ['#e3f6ec', '#1e9e62'],
+  ['#e7effd', '#2f62c4'],
+  ['#fdeede', '#a86a17'],
+  ['#fdecec', '#c0323c'],
+  ['#efe9fb', '#6d4fc2'],
+  ['#e2f2f2', '#147a7a'],
+];
+
+function avatarColors(name) {
+  let h = 0;
+  for (const c of String(name)) h = (h * 31 + c.codePointAt(0)) >>> 0;
+  return AVATARS[h % AVATARS.length];
+}
+
+function initials(name) {
+  const parts = String(name).trim().split(/\s+/);
+  const s = (parts[0]?.[0] || '?') + (parts.length > 1 ? parts[parts.length - 1][0] : '');
+  return s.toUpperCase();
+}
+
+/** Inline-Wurm-SVG (grün = Standard/niedrig, rot = hohe Karten). */
+function wormSvg(red = false) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', red ? '#wormIconRed' : '#wormIconGreen');
+  svg.appendChild(use);
+  return svg;
+}
 
 // ---------- Sound (WebAudio-Synth, keine Assets, alles transform-frei) ----------
 
@@ -122,7 +157,7 @@ function renderDie(v, opts = {}) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('aria-hidden', 'true');
     const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', '#wormIcon');
+    use.setAttribute('href', '#wormIconGreen');
     svg.appendChild(use);
     node.appendChild(svg);
     node.setAttribute('aria-label', 'Wurm (5 Punkte)');
@@ -144,9 +179,8 @@ function renderDie(v, opts = {}) {
   return node;
 }
 
-function avatarFor(p) {
-  return p.isBot ? '🤖' : '🧑';
-}
+/* Entfernt: avatarFor/primaryOpponent (altes Tisch-Layout) – ersetzt durch
+ * Initialen-Avatare (avatarColors/initials) und feste Eck-Slots. */
 
 // ---------- Session ----------
 
@@ -336,7 +370,7 @@ function showBig(text, kind, ms = 1350) {
 
 function shakeTable() {
   if (reduceMotion()) return;
-  const t = $('#table');
+  const t = $('#stage');
   if (!t) return;
   t.classList.remove('shake');
   void t.offsetWidth; // Reflow: Animation neu starten
@@ -361,12 +395,12 @@ function stackTopRect(playerIdx) {
   if (!p) return null;
   const stack = document.querySelector(`.seat-stack[data-pid="${p.id}"]`);
   if (stack) {
-    const top = stack.querySelector('.stone.top') || stack;
+    const top = stack.querySelector('.mini') || stack;
     return top.getBoundingClientRect();
   }
-  // Opfer/Nehmer in der Seitenleiste (3+ Spieler): Chip als Ersatz-Quelle.
-  const chip = document.querySelector(`.rail-chip[data-pid="${p.id}"]`);
-  return chip ? chip.getBoundingClientRect() : null;
+  // Opfer/Nehmer in der Zusatzzeile (5+ Spieler): Panel als Ersatz-Quelle.
+  const panel = document.querySelector(`.seat-more .ppanel[data-pid="${p.id}"]`);
+  return panel ? panel.getBoundingClientRect() : null;
 }
 
 /**
@@ -382,7 +416,7 @@ function runPendingFly() {
   if (fly.kind === 'take-grill' || fly.kind === 'steal') {
     // Ziel: Stapel des Nehmers (per stabiler Spieler-ID, nicht per rotiertem Index).
     const stack = fly.takerId ? document.querySelector(`.seat-stack[data-pid="${fly.takerId}"]`) : null;
-    target = (stack && (stack.querySelector('.stone.top') || stack)) || null;
+    target = (stack && (stack.querySelector('.mini') || stack)) || null;
   } else if (fly.kind === 'bust-return') {
     target = document.querySelector(`#grill .tile[data-value="${fly.value}"]`);
   }
@@ -477,10 +511,7 @@ function myTurn(st) {
   return st.game && st.game.currentPlayerId === S.playerId;
 }
 
-/** Erster Gegner in Sitzordnung (stabiler „Hauptgegner" oben), Rest → Seitenleiste. */
-function primaryOpponent(players) {
-  return players.find((p) => p.id !== S.playerId) || null;
-}
+/* Entfernt: primaryOpponent (altes Tisch-Layout) – feste Eck-Slots in renderSeats. */
 
 function renderGame(st) {
   const mine = myTurn(st);
@@ -489,6 +520,8 @@ function renderGame(st) {
   renderTurn(st, mine);
   // Das Würfelfeld wandert erst nach dem Befüllen – kein Flackern, keine Doppelanzeige.
   moveDiceTable(!mine);
+  updateSlotHints(st, mine);
+  renderPill(st, mine);
   renderBottomBar(st);
   runPendingFly();
   if (mine && !S.wasMine) {
@@ -498,131 +531,153 @@ function renderGame(st) {
   S.wasMine = mine;
 }
 
-function seatInfoHTML(p, isActive, activeText) {
-  const top = p.stack[p.stack.length - 1];
-  const wrap = document.createElement('div');
-  wrap.className = 'seat-text';
-  const who = document.createElement('span');
-  who.className = 'who';
-  who.textContent = `${avatarFor(p)} ${p.name}`;
-  const pill = document.createElement('span');
-  pill.className = 'turn-pill';
-  pill.textContent = activeText;
-  pill.style.display = isActive ? '' : 'none';
-  who.appendChild(pill);
-  const sub = document.createElement('span');
-  sub.className = 'sub';
-  sub.textContent = `🪱 ${playerWorms(p.stack)} · oben: ${top !== undefined ? top : '–'}`;
-  const nm = document.createElement('div');
-  nm.append(who);
-  const sb = document.createElement('div');
-  sb.append(sub);
-  wrap.append(nm, sb);
-  return wrap;
+/** Status-Pill oben („Max ist am Zug“ / „Du bist am Zug“), animiert nur bei Wechsel. */
+function renderPill(st, mine) {
+  const gm = st.game;
+  const me = gm.players[gm.currentPlayer];
+  const text = mine ? 'Du bist am Zug' : `${me.name} ist am Zug`;
+  if (text === S.lastPillText) return;
+  S.lastPillText = text;
+  $('#turnPillText').textContent = text;
+  const pill = $('#turnPill');
+  pill.classList.remove('hidden', 'swap');
+  void pill.offsetWidth;
+  pill.classList.add('swap');
 }
 
-/** Kompakter überlappender Stapel: nur die obersten Steine, Top hervorgehoben. */
-function pileNode(stack, maxVisible = 6) {
-  const pile = document.createElement('div');
-  pile.className = 'pile';
+/** Spielerpanel in den Ecken: Avatar-Initialen, Name, Wurm-Anzahl, Mini-Stapel. */
+function panelNode(p, { active = false, activeText = '', you = false } = {}) {
+  const el = document.createElement('div');
+  el.className = 'ppanel' + (active ? ' active' : '');
+  el.dataset.pid = p.id;
+
+  const av = document.createElement('span');
+  av.className = 'avatar';
+  const [bg, fg] = avatarColors(p.name);
+  av.style.setProperty('--av-bg', bg);
+  av.style.setProperty('--av-fg', fg);
+  av.textContent = initials(p.name);
+  if (p.isBot) {
+    const b = document.createElement('span');
+    b.className = 'bot';
+    b.textContent = '🤖';
+    av.appendChild(b);
+  }
+
+  const info = document.createElement('span');
+  info.className = 'pinfo';
+  const nm = document.createElement('span');
+  nm.className = 'pname';
+  nm.textContent = p.name;
+  if (you) {
+    const y = document.createElement('span');
+    y.className = 'you';
+    y.textContent = ' (Du)';
+    nm.appendChild(y);
+  }
+  const w = document.createElement('span');
+  w.className = 'pworms';
+  w.appendChild(wormSvg(false));
+  const wc = document.createElement('span');
+  wc.textContent = playerWorms(p.stack);
+  w.appendChild(wc);
+  if (active && activeText) {
+    const at = document.createElement('span');
+    at.className = 'you';
+    at.textContent = ` · ${activeText}`;
+    w.appendChild(at);
+  }
+  info.append(nm, w);
+
+  const stack = document.createElement('span');
+  stack.className = 'seat-stack';
+  stack.dataset.pid = p.id;
+  stack.appendChild(miniStackNode(p.stack));
+
+  el.append(av, info, stack);
+  return el;
+}
+
+/** Mini-Stapel: oberste Karte + Count-Badge (wie Referenz). */
+function miniStackNode(stack) {
+  const wrap = document.createElement('span');
+  wrap.style.position = 'relative';
+  wrap.style.display = 'inline-block';
+  const m = document.createElement('span');
   if (stack.length === 0) {
-    const none = document.createElement('span');
-    none.className = 'pile-empty';
-    none.textContent = 'leer';
-    pile.appendChild(none);
-    return pile;
+    m.className = 'mini empty';
+    m.textContent = '–';
+  } else {
+    m.className = 'mini';
+    m.textContent = stack[stack.length - 1];
   }
-  const hidden = Math.max(0, stack.length - maxVisible);
-  if (hidden > 0) {
-    const more = document.createElement('span');
-    more.className = 'pile-empty';
-    more.textContent = `+${hidden}`;
-    pile.appendChild(more);
+  wrap.appendChild(m);
+  if (stack.length > 0) {
+    const b = document.createElement('span');
+    b.className = 'count-badge';
+    b.textContent = stack.length;
+    wrap.appendChild(b);
   }
-  stack.slice(-maxVisible).forEach((v, i, arr) => {
-    const s = document.createElement('div');
-    s.className = 'stone' + (i === arr.length - 1 ? ' top' : '');
-    const sv = document.createElement('span');
-    sv.className = 'sv';
-    sv.textContent = v;
-    const sw = document.createElement('span');
-    sw.className = 'sw';
-    sw.textContent = '🪱'.repeat(wormsForTile(v));
-    s.append(sv, sw);
-    pile.appendChild(s);
-  });
-  return pile;
+  return wrap;
 }
 
 function renderSeats(st, mine) {
   const players = st.game.players;
   const currentId = st.game.currentPlayerId;
   const me = players.find((p) => p.id === S.playerId);
-  const opp = primaryOpponent(players);
+  const opps = players.filter((p) => p.id !== S.playerId);
 
-  // Eigener Sitz (immer unten).
-  const ownSeat = $('#ownSeat');
-  ownSeat.innerHTML = '';
-  if (me) {
-    ownSeat.appendChild(seatInfoHTML(me, mine, 'Du bist dran'));
-    const os = document.createElement('div');
-    os.className = 'seat-stack';
-    os.dataset.pid = me.id;
-    os.appendChild(pileNode(me.stack));
-    ownSeat.appendChild(os);
-  }
-  ownSeat.classList.toggle('active', mine);
-  ownSeat.classList.toggle('dim', !mine);
-
-  // Gegner-Sitz oben (stabiler Hauptgegner, aktiv nur in seinem Zug).
-  const oppSeat = $('#oppSeat');
-  oppSeat.innerHTML = '';
-  if (opp) {
-    const oppActive = currentId === opp.id;
-    oppSeat.appendChild(seatInfoHTML(opp, oppActive, 'am Zug'));
-    const ps = document.createElement('div');
-    ps.className = 'seat-stack';
-    ps.dataset.pid = opp.id;
-    ps.appendChild(pileNode(opp.stack));
-    oppSeat.appendChild(ps);
-    oppSeat.classList.toggle('active', oppActive);
-    oppSeat.classList.toggle('dim', !oppActive && !mine);
-    oppSeat.style.display = '';
-  } else {
-    oppSeat.style.display = 'none';
+  // Ich fest unten-links; Gegner oben-links, oben-rechts, unten-rechts; Rest → Zusatzzeile.
+  const slots = { seatME: me, seatTL: opps[0] || null, seatTR: opps[1] || null, seatBR: opps[2] || null };
+  for (const [slotId, p] of Object.entries(slots)) {
+    const slot = document.getElementById(slotId);
+    slot.innerHTML = '';
+    if (!p) continue;
+    const isActive = p.id === currentId;
+    slot.appendChild(panelNode(p, {
+      active: isActive,
+      activeText: p.id === S.playerId ? 'Du bist dran' : 'am Zug',
+      you: p.id === S.playerId,
+    }));
   }
 
-  // Übrige Mitspieler als kompakte Seitenleiste.
-  const rail = $('#sideRail');
-  rail.innerHTML = '';
-  for (const p of players) {
-    if (p.id === S.playerId || (opp && p.id === opp.id)) continue;
-    const chip = document.createElement('div');
-    chip.className = 'rail-chip' + (p.id === currentId ? ' active' : '');
-    chip.dataset.pid = p.id;
-    const top = p.stack[p.stack.length - 1];
-    chip.textContent = `${avatarFor(p)} ${p.name} · 🪱 ${playerWorms(p.stack)} · ${top !== undefined ? top : '–'}`;
-    rail.appendChild(chip);
+  const more = $('#seatMore');
+  more.innerHTML = '';
+  for (const p of opps.slice(3)) {
+    more.appendChild(panelNode(p, { active: p.id === currentId, activeText: 'am Zug' }));
   }
   highlightChoice();
 }
 
+/** Grill: NUR offene Karten (genommen = weg, wie Referenz). Zahl + 1–4 Wurm-Icons (≤28 grün, ≥29 rot). */
 function renderGrill(gm) {
   const el = $('#grill');
   el.innerHTML = '';
+  const prev = S.grillKeys || new Set();
+  const next = new Set();
   for (const t of gm.grill) {
+    if (!t.faceUp) continue;
+    next.add(t.value);
     const d = document.createElement('div');
-    d.className = 'tile' + (t.faceUp ? '' : ' taken');
+    d.className = 'tile' + (prev.has(t.value) ? '' : ' new');
     d.dataset.value = t.value;
-    d.innerHTML = `<span class="v">${t.value}</span><span class="w">${'🪱'.repeat(t.worms)}</span>`;
+    const v = document.createElement('span');
+    v.className = 'v';
+    v.textContent = t.value;
+    const ww = document.createElement('span');
+    ww.className = 'ww';
+    const red = t.value >= 29;
+    for (let i = 0; i < t.worms; i++) ww.appendChild(wormSvg(red));
+    d.append(v, ww);
     el.appendChild(d);
   }
-  // Zuletzt genommene/umgedrehte Portion hervorheben (überlebt das Neuzeichnen).
+  // Zuletzt zurückgekehrte Portion (BUST) hervorheben, falls wieder offen.
   if (S.lastFlipped !== null && S.lastFlipped !== undefined) {
     const hit = el.querySelector(`.tile[data-value="${S.lastFlipped}"]`);
     if (hit) hit.classList.add('flash');
     S.lastFlipped = null;
   }
+  S.grillKeys = next;
   highlightChoice();
 }
 
@@ -712,18 +767,23 @@ function renderTurn(st, mine) {
     } else {
       node = renderDie(v, { cls: canChoose && !ok ? 'locked' : '', delay, title: dieLabel(v) });
     }
+    // Leichte Individualität pro Würfel (Richtung/Neigung), Ergebnis bleibt Server-Wert.
+    node.style.setProperty('--rd', (((i * 37) % 11) - 5) / 5);
     if (animate) node.classList.add('just-rolled');
     rd.appendChild(node);
   });
 
-  // Beiseitegelegt, gruppiert mit Punkten.
+  // Beiseitegelegt, gruppiert mit Punkten (Pop nur bei inhaltlicher Änderung).
   const sa = $('#setAside');
   sa.innerHTML = '';
   const entries = Object.entries(gm.turn.setAside);
+  const saKey = JSON.stringify(gm.turn.setAside);
+  const saChanged = saKey !== S.setAsideKey;
+  S.setAsideKey = saKey;
   if (entries.length === 0) sa.innerHTML = '<span class="empty-note">—</span>';
   for (const [v, n] of entries) {
     const grp = document.createElement('div');
-    grp.className = 'set-group';
+    grp.className = 'set-group' + (saChanged ? ' new' : '');
     for (let i = 0; i < n; i++) {
       grp.appendChild(renderDie(v, { cls: 'locked' }));
     }
@@ -746,15 +806,49 @@ function renderTurn(st, mine) {
   btnTake.disabled = !takeAllowed;
   btnTake.textContent = gm.turn.picked.length > 0 ? `Nehmen / Beenden (${score})` : 'Nehmen / Beenden';
   btnTake.title = (mine && gm.turn.picked.length > 0 && !ready.ok && !forced) ? ready.reason : '';
+
+  // Hinweilszeile unter den Buttons (Referenz: „Wähle einen Wert aus“).
+  const hint = $('#diceHint');
+  if (hint) {
+    hint.textContent = !mine
+      ? `${me.name} spielt …`
+      : gm.turn.phase === 'pick'
+        ? 'Wähle einen Wert aus'
+        : gm.turn.picked.length === 0
+          ? 'Würfle, um zu starten'
+          : 'Würfeln oder Nehmen';
+  }
+
+  // Inaktive Schale zeigt dezent, wer am Zug ist (Symmetrie zur Referenz).
+  // (Hinweis: diceHint-Text bleibt in renderTurn.)
+}
+
+/** Füllt die würfellose Schale mit dezentem Hinweis (läuft NACH moveDiceTable). */
+function updateSlotHints(st, mine) {
+  const table = $('#diceTable');
+  const name = st.game.players[st.game.currentPlayer]?.name || '';
+  for (const [slotId, isMine] of [['diceSlotTop', false], ['diceSlotBottom', true]]) {
+    const slot = document.getElementById(slotId);
+    if (!slot) continue;
+    const holdsTable = table && slot.contains(table);
+    const idle = isMine === mine ? false : true;
+    if (holdsTable) {
+      slot.querySelector('.slot-hint')?.remove();
+    } else if (idle) {
+      slot.innerHTML = '';
+      const s = document.createElement('span');
+      s.className = 'slot-hint';
+      s.textContent = mine ? 'Bereit' : `${name} ist am Zug`;
+      slot.appendChild(s);
+    }
+  }
 }
 
 function renderBottomBar(st) {
   const players = st.game.players;
   const me = players.find((p) => p.id === S.playerId);
-  const active = players[st.game.currentPlayer];
   $('#bbPlayers').textContent = `👥 ${players.length} Spieler`;
   $('#bbWorms').textContent = me ? `🪱 ${playerWorms(me.stack)} Würmer` : '';
-  $('#bbTurn').textContent = active ? (active.id === S.playerId ? '🎲 Du bist dran' : `🎲 ${active.name} spielt`) : '';
   $('#bbCode').textContent = S.code ? `Raum ${S.code}` : '';
 }
 
@@ -834,24 +928,24 @@ function openChoice(score, options) {
     box.appendChild(btn);
   }
   $('#choiceOverlay').classList.remove('hidden');
-  const table = $('#table');
-  if (table) table.classList.add('choosing');
+  const panel = $('#grillPanel');
+  if (panel) panel.classList.add('choosing');
   highlightChoice();
 }
 
 /** Hebt die zur Wahl stehenden Steine am Tisch hervor (Rest tritt zurück). */
 function highlightChoice() {
-  const table = $('#table');
-  if (!table || !S.pendingChoice) return;
+  const stage = $('#stage');
+  if (!stage || !S.pendingChoice) return;
   for (const o of S.pendingChoice) {
     if (o.source === 'grill') {
-      const tile = table.querySelector(`.tile[data-value="${o.value}"]`);
+      const tile = stage.querySelector(`.tile[data-value="${o.value}"]`);
       if (tile) tile.classList.add('stealable');
     } else if (o.fromPlayer !== undefined) {
       const players = S.state?.game?.players || [];
       const target = players[o.fromPlayer];
       if (!target) continue;
-      table.querySelectorAll('.seat-stack').forEach((el) => {
+      stage.querySelectorAll('.seat-stack').forEach((el) => {
         if (el.dataset.pid === target.id) el.classList.add('stealable');
       });
     }
@@ -860,8 +954,8 @@ function highlightChoice() {
 
 function clearChoiceHighlight() {
   S.pendingChoice = null;
-  const table = $('#table');
-  if (table) table.classList.remove('choosing');
+  const panel = $('#grillPanel');
+  if (panel) panel.classList.remove('choosing');
   document.querySelectorAll('.stealable').forEach((el) => el.classList.remove('stealable'));
 }
 
@@ -897,6 +991,9 @@ function leaveToMenu() {
   S.pendingFly = null;
   S.wasMine = false;
   S.overShown = false;
+  S.lastPillText = '';
+  S.grillKeys = null;
+  S.setAsideKey = '';
   clearSession();
   updateRoomBadge();
   refreshResume();

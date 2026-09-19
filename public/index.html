@@ -67,37 +67,29 @@
       <p id="lobbyHint" class="hint">Mindestens 2 Spieler nötig (Bots zählen mit).</p>
     </section>
 
-    <!-- Spieltisch -->
+    <!-- Spieltisch (Light-Minimal nach Referenz) -->
     <section id="screen-game" class="screen hidden">
-      <div class="table" id="table">
-        <!-- Oberer Bereich: Gegner -->
-        <div class="table-top" id="oppZone">
-          <div class="seat seat-top" id="oppSeat">
-            <div class="seat-info" id="oppInfo"></div>
-            <div class="seat-stack" id="oppStack" aria-label="Stapel des Gegners"></div>
-          </div>
-          <div class="dice-slot dice-slot-top" id="diceSlotTop" aria-label="Würfelbereich oben"></div>
+      <div class="stage" id="stage">
+        <div id="turnPill" class="turn-pill"><span class="dot" aria-hidden="true"></span><span id="turnPillText">Zug</span></div>
+        <div class="corner tl" id="seatTL"></div>
+        <div class="tray tray-top" id="trayTop">
+          <div class="dice-slot" id="diceSlotTop" aria-label="Würfelbereich oben"></div>
         </div>
+        <div class="corner tr" id="seatTR"></div>
 
-        <!-- Weitere Mitspieler (ab 3 Spielern) kompakt an der Seite -->
-        <div class="rail" id="sideRail" aria-label="Weitere Spieler"></div>
-
-        <!-- Mitte: Grill bleibt immer zentral -->
-        <div class="grill-board" id="grillBoard">
-          <div class="grill-title" aria-hidden="true">Bratwurmgrill</div>
+        <div class="panel grill-panel" id="grillPanel">
           <div id="grill" class="grill"></div>
         </div>
 
-        <!-- Unten: Würfel-Slot + eigener Bereich -->
-        <div class="dice-slot dice-slot-bottom" id="diceSlotBottom" aria-label="Würfelbereich unten"></div>
-        <div class="table-bottom" id="ownZone">
-          <div class="seat seat-bottom" id="ownSeat">
-            <div class="seat-info" id="ownInfo"></div>
-            <div class="seat-stack" id="ownStack" aria-label="Eigener Stapel"></div>
-          </div>
+        <div class="corner bl" id="seatME"></div>
+        <div class="tray tray-bottom" id="trayBottom">
+          <div class="dice-slot" id="diceSlotBottom" aria-label="Würfelbereich unten"></div>
         </div>
+        <div class="corner br" id="seatBR"></div>
 
-        <!-- Das eine Würfelfeld: wandert per JS zwischen oben/unten zum aktiven Spieler -->
+        <div id="seatMore" class="seat-more" aria-label="Weitere Spieler"></div>
+
+        <!-- Das eine Würfelfeld: wandert per JS zwischen oberer/unterer Schale zum aktiven Spieler -->
         <div class="dice-table" id="diceTable">
           <div class="dice-head">
             <span id="turnTitle" class="dice-turn">Zug</span>
@@ -109,24 +101,23 @@
           <div class="dice-label">Beiseitegelegt</div>
           <div id="setAside" class="dice-row set-aside"></div>
           <div class="btn-row dice-actions">
-            <button id="btnRoll" class="btn primary dice-btn">🎲 Würfeln</button>
+            <button id="btnRoll" class="btn primary dice-btn">🎲 WÜRFELN</button>
             <button id="btnTake" class="btn dice-btn">Nehmen / Beenden</button>
           </div>
+          <div class="dice-hint"><span class="rule"></span><span id="diceHint">Wähle einen Wert aus</span><span class="rule"></span></div>
         </div>
 
-        <!-- Kompakte Bottom-Bar für Sekundärinfos -->
+        <!-- Minimalistische Bottom-Bar -->
         <footer class="bottombar" id="bottomBar">
-          <span id="bbPlayers" class="bb-item"></span>
-          <span id="bbWorms" class="bb-item"></span>
-          <span id="bbTurn" class="bb-item"></span>
-          <details class="bb-more">
-            <summary title="Mehr Infos">⋯</summary>
-            <div class="bb-detail">
-              <span id="bbCode" class="bb-item"></span>
-              <button id="btnSound" class="btn ghost bb-leave" title="Sound an/aus">🔊</button>
-              <button id="btnLeaveGame" class="btn ghost bb-leave">Menü</button>
-            </div>
-          </details>
+          <span class="bb-group">
+            <span id="bbPlayers" class="bb-item"></span>
+            <span id="bbWorms" class="bb-item"></span>
+          </span>
+          <span class="bb-group">
+            <span id="bbCode" class="bb-item bb-code"></span>
+            <button id="btnSound" class="icon-btn" title="Sound an/aus">🔊</button>
+            <button id="btnLeaveGame" class="icon-btn" title="Zum Menü">☰</button>
+          </span>
         </footer>
         <details class="table-log">
           <summary>Ereignisse</summary>
@@ -168,17 +159,25 @@
       </div>
     </div>
   </main>
-  <!-- Bratwurm-Symbol für Wurm-Würfel (eigene Zeichnung: Erdwurm, segmentiert).
-       Das mitgelieferte Hotdog-SVG wurde bewusst NICHT verwendet (Foto-Trace mit
-       weißem Hintergrund, passt nicht zum Spieltisch-Konzept). -->
+  <!-- Wurm-Symbole (eigene Zeichnung: Erdwurm, segmentiert).
+       Grün = Wurm-Würfel + niedrige Karten (21–28) + Panel-Zähler (Referenz),
+       Rot = hohe Karten (29–36, Referenz). -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <symbol id="wormIcon" viewBox="0 0 64 64">
-      <path d="M12 48 C15 32 27 20 46 19" fill="none" stroke="#a34a2e" stroke-width="14" stroke-linecap="round"/>
-      <path d="M14 44 C18 32 28 24 42 22" fill="none" stroke="#d98a5f" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
-      <path d="M24 38 L28 28 M33 31 L36 21 M42 26 L44 17" fill="none" stroke="#7e3418" stroke-width="2.4" stroke-linecap="round"/>
-      <circle cx="48" cy="19" r="7.5" fill="#b65a32"/>
+    <symbol id="wormIconGreen" viewBox="0 0 64 64">
+      <path d="M12 48 C15 32 27 20 46 19" fill="none" stroke="#1e9e62" stroke-width="14" stroke-linecap="round"/>
+      <path d="M14 44 C18 32 28 24 42 22" fill="none" stroke="#7ce3ab" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+      <path d="M24 38 L28 28 M33 31 L36 21 M42 26 L44 17" fill="none" stroke="#147045" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="48" cy="19" r="7.5" fill="#27b56f"/>
       <circle cx="50.5" cy="17" r="2.2" fill="#fff"/>
-      <circle cx="50.8" cy="17.2" r="1.1" fill="#2b1a10"/>
+      <circle cx="50.8" cy="17.2" r="1.1" fill="#123626"/>
+    </symbol>
+    <symbol id="wormIconRed" viewBox="0 0 64 64">
+      <path d="M12 48 C15 32 27 20 46 19" fill="none" stroke="#c0323c" stroke-width="14" stroke-linecap="round"/>
+      <path d="M14 44 C18 32 28 24 42 22" fill="none" stroke="#f2a0a5" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+      <path d="M24 38 L28 28 M33 31 L36 21 M42 26 L44 17" fill="none" stroke="#8c1f28" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="48" cy="19" r="7.5" fill="#d8454f"/>
+      <circle cx="50.5" cy="17" r="2.2" fill="#fff"/>
+      <circle cx="50.8" cy="17.2" r="1.1" fill="#3d1013"/>
     </symbol>
   </svg>
   <script src="app.js"></script>
