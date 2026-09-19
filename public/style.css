@@ -283,30 +283,43 @@ body {
 .worm-line.ok { color: var(--green-deep); }
 .worm-line.missing { color: var(--red); }
 
-/* ---------- Würfel (wichtigstes Element): weiß, Soft-Shadow, Pips ---------- */
-.dice-row { display: flex; flex-wrap: wrap; gap: 12px; min-height: 80px; justify-content: center; align-items: center; }
-.dice-row.set-aside { min-height: 56px; }
+/* ---------- Würfel (Herzstück): physische Spielwürfel, minimal ---------- */
+.dice-row { display: flex; flex-wrap: wrap; gap: 14px; min-height: 84px; justify-content: center; align-items: center; }
+.dice-row.set-aside { min-height: 58px; }
 .die {
   width: var(--die-size); height: var(--die-size);
   border-radius: 24%;
   border: 1px solid var(--die-edge);
-  background: var(--die-bg); color: var(--ink);
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(150deg, #ffffff 60%, #f0f2f0);
+  color: var(--ink);
   display: flex; align-items: center; justify-content: center;
+  position: relative;
   box-shadow: var(--shadow-die);
-  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
+}
+/* Dezentes Oberlicht für Materialwirkung (kein Layout-Einfluss). */
+.die::before {
+  content: "";
+  position: absolute; left: 18%; right: 18%; top: 7%; height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
+  pointer-events: none;
 }
 .die .pips {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  width: 68%; height: 68%;
+  width: 72%; height: 72%;
+  gap: 1px;
 }
 .die .pip { border-radius: 50%; }
 .die .pip.on {
-  background: radial-gradient(circle at 35% 30%, #4a4f52, var(--pip) 72%);
-  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.35);
+  background: radial-gradient(circle at 35% 28%, #565b5e, var(--pip) 70%);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.25);
 }
-.die svg { width: 72%; height: 72%; }
+.die svg { width: 74%; height: 74%; }
 button.die.pickable {
   min-width: var(--die-size); min-height: var(--die-size);
   border-color: var(--green);
@@ -315,31 +328,54 @@ button.die.pickable {
   box-shadow: var(--shadow-die), 0 0 0 4px var(--green-soft);
 }
 button.die.pickable:hover {
-  transform: translateY(-6px) scale(1.04);
-  box-shadow: 0 18px 28px rgba(35, 45, 40, 0.16), 0 0 0 4px var(--green-soft);
+  transform: translateY(-5px) scale(1.03);
+  box-shadow: 0 20px 30px rgba(35, 45, 40, 0.17), 0 0 0 4px var(--green-soft);
 }
-button.die.pickable:active { transform: translateY(0) scale(0.93); transition-duration: 0.05s; }
-.die.locked { background: #f1f3f1; box-shadow: 0 4px 10px rgba(35, 45, 40, 0.08); opacity: 0.75; }
-.die.just-rolled { animation: rollsettle 0.55s cubic-bezier(.2,.7,.3,1.1) backwards; }
-@keyframes rollsettle {
-  0% { transform: translateY(-16px) scale(1.07) rotate(calc(var(--rd, 0) * 12deg)); opacity: 0.4; }
-  35% { transform: translateY(4px) rotate(calc(var(--rd, 0) * -16deg)) scale(1.02); opacity: 1; }
-  60% { transform: translateY(-5px) rotate(calc(var(--rd, 0) * 9deg)); }
-  100% { transform: none; opacity: 1; }
+button.die.pickable:active { transform: translateY(1px) scale(0.9); transition-duration: 0.08s; }
+/* Beiseite: weiß + angehoben + grüner Akzent = eindeutig selected. */
+.die.locked {
+  background:
+    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(150deg, #ffffff 60%, #eef3ee);
+  border-color: var(--green);
+  box-shadow: 0 10px 18px rgba(35, 45, 40, 0.13), 0 0 0 3px var(--green-soft);
+  opacity: 1;
+  transform: translateY(-2px);
 }
+/* Wurf in 3 Phasen: Anheben → individueller Tumble → Landung mit Squash.
+ * Dauer pro Würfel via --rdur (540–700 ms), Richtung via --rd. */
+.die.just-rolled { animation: diceroll var(--rdur, 0.6s) cubic-bezier(.25,.7,.35,1) backwards; }
+@keyframes diceroll {
+  0% { transform: translateY(0) scale(1) rotate(0); }
+  18% { transform: translateY(-16px) scale(1.08) rotate(calc(var(--rd, 0) * 14deg)); }
+  45% { transform: translateY(5px) scale(1.03) rotate(calc(var(--rd, 0) * -18deg)); }
+  68% { transform: translateY(-8px) scale(1.05) rotate(calc(var(--rd, 0) * 10deg)); }
+  84% { transform: translateY(2px) scale(1.02, 0.94) rotate(0); }
+  100% { transform: none; }
+}
+/* Wurm landet mit einmaligem grünem Ring-Impact. */
+.die.worm.just-rolled { animation: diceroll var(--rdur, 0.6s) cubic-bezier(.25,.7,.35,1) backwards, wormland 0.65s ease-out backwards; }
+@keyframes wormland {
+  0%, 55% { box-shadow: var(--shadow-die); }
+  75% { box-shadow: var(--shadow-die), 0 0 0 8px var(--green-glow); }
+  100% { box-shadow: var(--shadow-die); }
+}
+/* Optimistisches Anheben direkt nach Klick auf WÜRFELN (bis Server antwortet). */
+.dice-table.throwing .die { transform: translateY(-8px) scale(1.04); }
 .set-group {
   display: flex; align-items: center; gap: 5px;
-  background: var(--panel); border: 1px solid var(--line);
+  background: var(--panel); border: 1px solid var(--green);
   border-radius: var(--radius-sm); padding: 5px 10px 5px 5px;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-soft), 0 0 0 3px var(--green-soft);
 }
 /* Nur bei inhaltlicher Änderung aufpoppen (Re-Render bei jedem STATE!). */
 .set-group.new {
-  animation: setpop 0.25s ease;
+  animation: setpop 0.28s ease;
 }
 @keyframes setpop {
-  0% { transform: scale(0.85); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  0% { transform: translateY(-10px) scale(0.88); opacity: 0; }
+  60% { transform: translateY(1px) scale(1.02); opacity: 1; }
+  100% { transform: none; opacity: 1; }
 }
 .set-group .die { width: 46px; height: 46px; }
 .set-group .n { color: var(--muted); font-size: 0.85rem; font-weight: 700; }
@@ -535,7 +571,8 @@ button.die.pickable:active { transform: translateY(0) scale(0.93); transition-du
   .dice-hint .rule { width: 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .die.just-rolled, .tile, .tile.stealable, .set-group { animation: none; }
+  .die.just-rolled, .die.worm.just-rolled, .tile, .tile.stealable, .set-group, .set-group.new, .tile.new { animation: none; }
+  .dice-table.throwing .die { transform: none; }
   .stage.shake { animation: none; }
   .turn-pill .dot { animation: none; }
   .bigflash span { animation-duration: 0.01s; }

@@ -35,7 +35,45 @@ const S = {
   lastPillText: '', // Status-Pill: nur bei Wechsel animieren
   grillKeys: null, // offene Grillwerte des letzten Renders (nur neue Karten animieren)
   setAsideKey: '', // Beiseite-Stand des letzten Renders (Pop nur bei Änderung)
+  rollSeq: 0, // Lande-Ticks: nur aktuellster Wurf darf ticken
+  landingTimers: [], // offene Lande-Tick-Timeouts (cleanup bei neuem Wurf/Verlassen)
+  throwTimer: null, // Fallback: optimistische Wurf-Anhebung wieder entfernen
 };
+
+/** Wurfdauer pro Würfel in Sekunden (540–680 ms, subtil unterschiedlich). */
+function rollDur(i) {
+  return 0.54 + ((i * 53) % 5) * 0.035;
+}
+
+function clearLandingTimers() {
+  for (const id of S.landingTimers) clearTimeout(id);
+  S.landingTimers = [];
+}
+
+/**
+ * Plant pro Würfel einen Lande-Tick passend zur Animations-Staffelung
+ * (Delay + individuelle Dauer). Nur der aktuellste Wurf tickt; bei
+ * Reduced Motion gibt es einen einzelnen weichen Tick.
+ */
+function scheduleLandingTicks(rolled) {
+  clearLandingTimers();
+  if (reduceMotion()) {
+    Sfx.tick(0);
+    return;
+  }
+  const seq = ++S.rollSeq;
+  const key = rolled.join(',');
+  rolled.forEach((v, i) => {
+    const ms = i * 70 + rollDur(i) * 1000;
+    const id = setTimeout(() => {
+      if (seq !== S.rollSeq) return;
+      if (S.lastRolledKey !== key) return; // STATE zeigt längst anderes
+      if (v === 'W') Sfx.wormTick();
+      else Sfx.tick(i);
+    }, ms);
+    S.landingTimers.push(id);
+  });
+}
 
 /* Pastell-Avatare (Initialen): gedeckt + dezent, passend zur ruhigen Palette. */
 const AVATARS = [
@@ -73,11 +111,27 @@ function wormSvg(red = false) {
 
 const Sfx = {
   ctx: null,
-  muted: localStorage.getItem('heckmeck-muted') === '1',
+  master: null,
+  // 3 Stufen: 0 = aus, 1 = leise (35 %), 2 = an (100 %). Persistiert, migriert altes Mute-Flag.
+  level: (() => {
+    const v = Number(localStorage.getItem('heckmeck-volume'));
+    if (v === 0 || v === 1 || v === 2) return v;
+    return localStorage.getItem('heckmeck-muted') === '1' ? 0 : 2;
+  })(),
+  setLevel(l) {
+    this.level = l;
+    localStorage.setItem('heckmeck-volume', String(l));
+    if (this.master && this.ctx) this.master.gain.setValueAtTime([0, 0.35, 1][l], this.ctx.currentTime);
+  },
   ensure() {
-    if (this.muted) return null;
+    if (this.level === 0) return null;
     try {
-      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!this.ctx) {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.master = this.ctx.createGain();
+        this.master.connect(this.ctx.destination);
+      }
+      this.master.gain.setValueAtTime([0, 0.35, 1][this.level], this.ctx.currentTime);
       if (this.ctx.state === 'suspended') this.ctx.resume();
       return this.ctx;
     } catch {
@@ -96,11 +150,11 @@ const Sfx = {
     gn.gain.setValueAtTime(0.0001, t0);
     gn.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
     gn.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(gn).connect(ctx.destination);
+    o.connect(gn).connect(this.master);
     o.start(t0);
     o.stop(t0 + dur + 0.02);
   },
-  noise(dur = 0.08, freq = 2000, gain = 0.12, when = 0) {
+  noise(dur = 0.08, freq = 2000, gain = 0.12, when = 0, freqEnd = null) {
     const ctx = this.ensure();
     if (!ctx) return;
     const t0 = ctx.currentTime + when;
@@ -112,19 +166,35 @@ const Sfx = {
     src.buffer = buf;
     const f = ctx.createBiquadFilter();
     f.type = 'bandpass';
-    f.frequency.value = freq;
+    f.frequency.setValueAtTime(freq, t0);
+    if (freqEnd) f.frequency.exponentialRampToValueAtTime(freqEnd, t0 + dur);
     const gn = ctx.createGain();
     gn.gain.value = gain;
-    src.connect(f).connect(gn).connect(ctx.destination);
+    src.connect(f).connect(gn).connect(this.master);
     src.start(t0);
   },
-  roll() { this.noise(0.07, 2500, 0.14, 0); this.noise(0.07, 1800, 0.12, 0.09); this.noise(0.09, 1200, 0.12, 0.18); },
-  pick() { this.tone(640, 0.07, 'square', 0.06); this.tone(960, 0.06, 'sine', 0.08, 0.04); },
-  take() { this.tone(523, 0.12, 'triangle', 0.16); this.tone(784, 0.18, 'triangle', 0.16, 0.1); },
-  bust() { this.tone(220, 0.35, 'sawtooth', 0.12, 0, 90); this.noise(0.2, 300, 0.18, 0.02); },
-  steal() { this.noise(0.25, 3000, 0.1); this.tone(880, 0.1, 'sine', 0.12, 0.16); this.tone(1174, 0.16, 'sine', 0.12, 0.24); },
-  win() { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.15, i * 0.13)); },
-  turn() { this.tone(880, 0.12, 'sine', 0.1); },
+  // --- Würfel: Start, Lande-Ticks (trocken, leise), Wurm-Special ---
+  rollStart() { this.noise(0.12, 900, 0.08, 0, 2400); this.tone(300, 0.1, 'sine', 0.04, 0, 600); },
+  tick(i) {
+    this.noise(0.03, 3400 - (i % 5) * 220, 0.16);
+    this.tone(190 + (i % 5) * 14, 0.05, 'triangle', 0.2, 0, 120);
+  },
+  wormTick() {
+    this.noise(0.03, 2600, 0.1);
+    this.tone(660, 0.09, 'sine', 0.06);
+    this.tone(990, 0.12, 'sine', 0.05, 0.07);
+  },
+  pick() { this.tone(640, 0.07, 'square', 0.05); this.tone(960, 0.06, 'sine', 0.07, 0.04); },
+  pickWorm() { this.tone(740, 0.08, 'sine', 0.08); this.tone(1108, 0.12, 'sine', 0.06, 0.06); },
+  // --- Karten: Slide bei Abflug, sanftes Auflegen bei Landung ---
+  cardSlide() { this.noise(0.18, 500, 0.08, 0, 1500); },
+  cardPlace() { this.noise(0.06, 600, 0.14); this.tone(170, 0.07, 'triangle', 0.14, 0, 110); },
+  roll() { this.noise(0.07, 2500, 0.12, 0); this.noise(0.07, 1800, 0.1, 0.09); this.noise(0.09, 1200, 0.1, 0.18); },
+  take() { this.tone(523, 0.12, 'triangle', 0.14); this.tone(784, 0.18, 'triangle', 0.14, 0.1); },
+  bust() { this.tone(220, 0.35, 'sawtooth', 0.1, 0, 90); this.noise(0.2, 300, 0.15, 0.02); },
+  steal() { this.noise(0.25, 3000, 0.08); this.tone(880, 0.1, 'sine', 0.1, 0.16); this.tone(1174, 0.16, 'sine', 0.1, 0.24); },
+  win() { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.22, 'triangle', 0.13, i * 0.13)); },
+  turn() { this.tone(880, 0.12, 'sine', 0.08); },
 };
 
 function reduceMotion() {
@@ -296,11 +366,12 @@ function onMessage(msg) {
     case 'TURN_STARTED':
       break; // STATE danach zeichnet um
     case 'DICE_ROLLED':
-      Sfx.roll();
+      scheduleLandingTicks(msg.rolled);
       feed(`Gewürfelt: ${msg.rolled.map(dieLabel).join(' ')}`);
       break;
     case 'DICE_SELECTED':
-      Sfx.pick();
+      if (msg.picked === 'W') Sfx.pickWorm();
+      else Sfx.pick();
       feed(`Gewählt: ${msg.count}× ${dieLabel(msg.picked)} (+${msg.score} Punkte)`);
       break;
     case 'BUST':
@@ -310,6 +381,7 @@ function onMessage(msg) {
       if (msg.returned) S.pendingFly = { kind: 'bust-return', value: msg.returned, fromRect: stackTopRect() };
       showBig('BUST!', 'bust');
       Sfx.bust();
+      if (msg.returned) Sfx.cardSlide();
       shakeTable();
       showBanner(`💥 Fehlwurf!${msg.returned ? ` ${msg.returned} zurückgelegt.` : ''}${msg.flipped ? ` ${msg.flipped} umgedreht.` : ''}`, 'bust', 3200);
       feed('Fehlwurf!');
@@ -329,9 +401,11 @@ function onMessage(msg) {
       const what = isSteal ? `stiehlt ${msg.value}` : `nimmt ${msg.value}`;
       if (isSteal) {
         showBig('STEAL!', 'steal');
+        Sfx.cardSlide();
         Sfx.steal();
       } else {
         showBig('+ WURM!', 'take');
+        Sfx.cardSlide();
         Sfx.take();
       }
       showBanner(`${who} ${what}!`, 'take', 2200);
@@ -411,7 +485,11 @@ function stackTopRect(playerIdx) {
 function runPendingFly() {
   const fly = S.pendingFly;
   S.pendingFly = null;
-  if (!fly || !fly.fromRect || reduceMotion()) return;
+  // Sanftes Auflegen auch ohne sichtbaren Flug (z. B. Reduced Motion).
+  if (!fly || !fly.fromRect || reduceMotion()) {
+    if (fly) setTimeout(() => Sfx.cardPlace(), 150);
+    return;
+  }
   let target = null;
   if (fly.kind === 'take-grill' || fly.kind === 'steal') {
     // Ziel: Stapel des Nehmers (per stabiler Spieler-ID, nicht per rotiertem Index).
@@ -449,8 +527,15 @@ function runPendingFly() {
     ],
     { duration: 600, easing: 'cubic-bezier(.2,.7,.3,1)' },
   );
-  anim.onfinish = () => clone.remove();
-  setTimeout(() => clone.remove(), 800); // Fallback, falls onfinish nie feuert
+  let landed = false;
+  const land = () => {
+    if (landed) return;
+    landed = true;
+    clone.remove();
+    Sfx.cardPlace();
+  };
+  anim.onfinish = land;
+  setTimeout(land, 800); // Fallback, falls onfinish nie feuert
 }
 
 // ---------- Screens ----------
@@ -755,6 +840,8 @@ function renderTurn(st, mine) {
   const rolledKey = gm.turn.rolled.join(',');
   const animate = rolledKey !== S.lastRolledKey && gm.turn.rolled.length > 0;
   S.lastRolledKey = rolledKey;
+  // Server hat geantwortet: optimistische Anhebung zurücknehmen.
+  $('#diceTable').classList.remove('throwing');
   if (gm.turn.rolled.length === 0) {
     rd.innerHTML = '<span class="empty-note">—</span>';
   }
@@ -767,8 +854,9 @@ function renderTurn(st, mine) {
     } else {
       node = renderDie(v, { cls: canChoose && !ok ? 'locked' : '', delay, title: dieLabel(v) });
     }
-    // Leichte Individualität pro Würfel (Richtung/Neigung), Ergebnis bleibt Server-Wert.
+    // Leichte Individualität pro Würfel (Richtung/Neigung + Dauer), Ergebnis bleibt Server-Wert.
     node.style.setProperty('--rd', (((i * 37) % 11) - 5) / 5);
+    node.style.setProperty('--rdur', `${rollDur(i)}s`);
     if (animate) node.classList.add('just-rolled');
     rd.appendChild(node);
   });
@@ -994,6 +1082,9 @@ function leaveToMenu() {
   S.lastPillText = '';
   S.grillKeys = null;
   S.setAsideKey = '';
+  clearLandingTimers();
+  S.rollSeq++;
+  clearTimeout(S.throwTimer);
   clearSession();
   updateRoomBadge();
   refreshResume();
@@ -1030,7 +1121,15 @@ $('#btnAddBot').addEventListener('click', () => {
 $('#btnStart').addEventListener('click', () => send({ t: 'start' }));
 $('#btnLeaveLobby').addEventListener('click', leaveToMenu);
 $('#btnLeaveGame').addEventListener('click', leaveToMenu);
-$('#btnRoll').addEventListener('click', () => send({ t: 'roll' }));
+$('#btnRoll').addEventListener('click', () => {
+  // Optimistisches Feedback: Würfel heben sich schon beim Klick (Server antwortet gleich).
+  Sfx.rollStart();
+  const t = $('#diceTable');
+  t.classList.add('throwing');
+  clearTimeout(S.throwTimer);
+  S.throwTimer = setTimeout(() => t.classList.remove('throwing'), 900);
+  send({ t: 'roll' });
+});
 $('#btnTake').addEventListener('click', () => send({ t: 'take' }));
 $('#btnNewRoom').addEventListener('click', leaveToMenu);
 $('#btnRetry').addEventListener('click', () => {
@@ -1050,15 +1149,18 @@ $('#btnToMenu').addEventListener('click', () => {
 
 // ---------- Start ----------
 
+const SOUND_ICONS = ['🔇', '🔉', '🔊'];
+const SOUND_LABELS = ['Sound aus', 'Sound leise', 'Sound an'];
 function refreshSoundBtn() {
   const b = $('#btnSound');
-  if (b) b.textContent = Sfx.muted ? '🔇' : '🔊';
+  if (!b) return;
+  b.textContent = SOUND_ICONS[Sfx.level];
+  b.title = `${SOUND_LABELS[Sfx.level]} – klicken zum Wechseln`;
 }
 $('#btnSound').addEventListener('click', () => {
-  Sfx.muted = !Sfx.muted;
-  localStorage.setItem('heckmeck-muted', Sfx.muted ? '1' : '0');
+  Sfx.setLevel((Sfx.level + 2) % 3); // an → leise → aus → an …
   refreshSoundBtn();
-  if (!Sfx.muted) Sfx.pick();
+  if (Sfx.level > 0) Sfx.pick();
 });
 // AudioContext darf erst nach Nutzer-Geste starten (Autoplay-Policy).
 document.addEventListener('pointerdown', () => Sfx.ensure(), { once: true });
