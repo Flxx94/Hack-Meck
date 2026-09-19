@@ -35,7 +35,7 @@ Der WebSocket nutzt automatisch denselben Host/Port (kein hardcoded localhost).
 
 ### LAN-Checkliste (2+ Geräte im gleichen WLAN)
 
-1. Auf dem Host: `npm start`, LAN-IP aus dem Log ablesen (z. B. `http://192.168.111.138:3000`)
+1. Auf dem Host: `npm start`, LAN-IP aus dem Log ablesen (z. B. `http://111.111.111.111:3000`)
 2. Auf den anderen Geräten `http://<LAN-IP>:3000` öffnen
    (ggf. Windows-Firewall: eingehende Regel für Port 3000 erlauben)
 3. Raum erstellen, Code teilen, beitreten, losspielen

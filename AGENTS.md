@@ -82,10 +82,31 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - `npm test` läuft seriell (`--test-concurrency=1`): parallele WS-Suite hing (17.09.2026, >120 s ohne Ergebnis); seriell ~9 s stabil.
 - `public/*`: volles Spiel-UI (s. Frontend) – Screens Menü/Lobby/Spiel/Ende, rendert nur Server-`STATE`, Würfel als Buttons (gültige klickbar), Grill, Stapel, Punkt-/Wurm-Anzeige, NEED_CHOICE-Modal, BUST/Take-Banner, Event-Feed, Reconnect-Overlay + Auto-Rejoin, Session in localStorage.
 
-## Frontend (implementiert Phase 7)
-- Screens: Menü (Name/Create/Join/Resume) → Lobby (Code, Spieler, Bot-Stärke, Start) → Spiel → Ende (Rangliste). Danach „Neuer Raum" (kein Rematch – offener Punkt).
-- Spielansicht: Spieler-Chips (aktiv pulsiert, Würmer + Top-Portion), Grill (16 Tiles, genommen/verdeckt), Würfel als Buttons (nur gültige klickbar, Wurf-Animation gestaffelt), beiseitegelegt gruppiert, Punkte + Wurmstatus, Roll-/Nehmen-Buttons (kontextsensitiv deaktiviert), Stapel, Event-Feed, NEED_CHOICE-Modal (Grill/Stehlen mit Gegnernamen), BUST/Take-Banner, ERROR-Toasts, Reconnect-Overlay + Auto-Rejoin (3 s) via localStorage-Session.
-- **Theme leicht umstellbar:** alle Farben/Abstände/Radien/Schrift als CSS-Variablen im markierten `:root`-Block in `public/style.css` (keine hartcodierten Farben in Komponenten); Dark Mode via `prefers-color-scheme` überschreibt nur Variablen. Touch-Targets ≥ 44 px, responsives Grid.
+## Frontend (Spieltisch-Redesign, 17.09.2026 – ersetzt Phase-7-Dashboard)
+- Match als Brettspieltisch (`#table`: Holzrahmen + Filz): Gegnerzone oben, **Grill fix in der Mitte**, eigene Zone unten. Nur `public/index.html`, `style.css`, `app.js` geändert; Protokoll/Regeln/Server unberührt.
+- **Ein** Würfelfeld (`#diceTable`) wandert per FLIP-Animation (~450 ms, WAAPI, `prefers-reduced-motion`-sicher) zum aktiven Spieler: Gegnerzug → Slot oben, eigener Zug → Slot unten. Leerer Slot kollabiert (`:empty`), kein Doppel-Render, kein Flackern.
+- Aktiver Sitz via `.active` (Accent-Rahmen + Glow) + Turn-Pill („Du bist dran“/„am Zug“); stabiler Hauptgegner oben, weitere Mitspieler als kompakte `#sideRail`-Chips, Stapel als überlappende Steine (Top hervorgehoben, `+n` bei >6).
+- Sekundärinfos in `#bottomBar` (Spielerzahl, eigene Würmer, aktiver Spieler; Rest + `eventFeed` + Menü-Button im `⋯`-Detail). `NEED_CHOICE` hebt Grill-/Stapel-Steine am Tisch hervor (`.stealable`, Rest dimmt), Auswahl-Overlay im Tisch-Stil.
+- Theme weiter nur via `:root`-Variablen (neu: `--felt/--wood/--seat-bg/--tile-edge/--die-size` u. a.), Dark Mode = Variablen-Override. Würfel 68 px Desktop / ≥54 px mobil (Touch ≥ 44 px), Grill 8×2 → 4×4.
+- Verifiziert 17.09.2026: `npm test` 57/57 grün, `node --check public/app.js`, ID-Crosscheck JS↔HTML (47/47), HTTP-Smoke (200 + Slots/BottomBar vorhanden). Manuelle Browser-Probe (Zugwechsel-Animation, Steal, BUST) steht aus – 2-Geräte-LAN-Test weiterhin offen.
+- Take-Gating (nur Client, Server bleibt autoritativ): `takeReadiness()` in `app.js` spiegelt `game.canTake()` aus dem STATE (Wurm + erreichbare Portion nötig) – Button disabled + Grund im `title`, sonst wäre ein Klick ein sofortiger BUST mit Strafe. Ausnahme Phase `take` (alle 8 beiseite, Würfeln unmöglich): Nehmen bleibt einzige Aktion, endet ggf. als BUST (wie Bots). BUST-Flip (`flipped`) und genommene Portion werden via `S.lastFlipped` im Grill geflasht (überlebt Neu-Render). Kernlogik dazu (`no-worm`/`no-lower` → BUST + höchste offene Portion umdrehen) war bereits in `game.js` + Tests; neu: 2 `canTake`-Tests (`ok:false` ohne Wurm / bei unerreichbarem Score). Suite jetzt 59/59 grün.
+
+## RNG-Prüfung (19.09.2026 – kein Fehler, `game.js` unverändert)
+- Anlass: Gefühl, man könne „ungewöhnlich weit ohne BUST" spielen. Objektiv geprüft statt RNG zu verändern.
+- Pfad: `randomDie = DICE_VALUES[Math.floor(rng()*6)]` (`game.js:150`), Produktion via `Math.random`, Tests via `opts.dice/opts.rng` (gleicher Codepfad); Restwürfel = `8 − beiseite`, `picked` via `validPickValues` ausgeschlossen, kein State-/Reuse-/Off-by-one-Fehler, kein Mensch/Bot-Unterschied.
+- `test/rng.test.js` (7 Tests): 100.000 Würfel → Chi²=2,8–8,0 (df=5, Schranke 30), jede Seite ±4 %, Wurm ≈16,7 %; Bin-Mitten-Test aller 6 Seiten; rng-Aufrufzahl = Restwürfel; Test-/Prod-Pfad identisch.
+- BUST-Simulation (echte `game.js`+`bots.js`-Regeln, normal-Bot, n=2000): BUST-Rate ≈30 %, Ø 3,7 Würfe/Zug, Gründe `only-picked-values` ≫ `no-lower` > `no-worm`; Wurm-Quote bei Take ≈98 %. Erklärung für das Gefühl: Erst-Wurf kann nie Auto-BUSTen, Risiko nach 1 Pick bei 5 Restwürfeln ≈0,01 % (`(picked/6)^rest`).
+- Fazit: RNG korrekt → **nicht verändert**; Spielregeln unangetastet.
+
+## Game-Feel-Update (19.09.2026 – nur `public/*`, Protokoll/Regeln/Server unberührt)
+- Echte Würfel: 1–5 als Pip-Raster (`renderDie` in `app.js`, `.pips`-Grid in CSS), Wurm als eigenes Inline-SVG (`#wormIcon`, segmentierter Erdwurm) auf orangefarbenem Wurm-Würfel mit Wiggle-Hover. Mitgeliefertes Hotdog-SVG bewusst NICHT verwendet (Foto-Autotrace mit weißem Hintergrund, 1742×980, passt nicht zum Tisch-Konzept).
+- Wurf-Animation: Fall+Rotation+Aufprall (`rollin`-Keyframe, Stagger 70 ms), reine Visualisierung des Server-Werts.
+- Kartenflug per FLIP-Klon (WAAPI, 600 ms): Grill→Stapel (`take-grill`), Stapel→Stapel (Steal, Nehmer per stabiler Spieler-ID, Fallback Rail-Chip bei 3+ Spielern), Stapel→Grill (BUST-Rücklage). Quelle aus altem DOM vor STATE-Render, Ziel nach Render; fehlt etwas → still übersprungen.
+- Big-Flash-Overlay (`#bigFlash`): `STEAL!`, `BUST!` (+Screen-Shake), `+ WURM!`, `DU BIST DRAN` (nur bei Zugwechsel), `GEWONNEN!` (einmalig in `renderOver`). Auto-Hide ~1,35 s, `pointer-events:none`.
+- Sound (WebAudio-Synth, keine Assets, `Sfx` in `app.js`): Würfel-Rasseln, Pick-Click, Take-Fanfare, BUST-Abstieg, Steal-Whoosh, Win-Arpeggio, Zug-Blip. Toggle `#btnSound` in `⋯`-Menü (persistiert `heckmeck-muted`), Start erst nach Nutzer-Geste (Autoplay-Policy).
+- Hover/Click: Pickable-Hover mit Lift+Glow, `:active`-Press (Dice `scale(.93)`, Buttons `scale(.97)`), `.dice-table.mine` mit Accent-Glow; statische Elemente ruhig.
+- Sync/Performance: Animationen lesen nur Server-Events, entscheiden nichts; nur `transform/opacity`/Keyframes; `prefers-reduced-motion` deaktiviert Flug/Shake/Roll (Flash sofort).
+- Verifiziert 19.09.2026: `npm test` 66/66 grün (59 Bestand + 7 RNG), `node --check public/app.js`, ID-Crosscheck (kein JS↔HTML-Mismatch), HTTP-Smoke (200 + `bigFlash`/`wormIcon`/`renderDie`/`Sfx` vorhanden). Manuelle Browser-Probe (Flug, Flash, Sound auf 2 Geräten) steht aus.
 
 ## Aktuelle Implementierung (Phase 8)
 - `test/integration.test.js`: 2 End-to-End-Spiele über WS – (1) 2 Menschen bis `GAME_OVER` (Strategie: Wurm sichern, weiter bis 21+, NEED_CHOICE→Grill) mit Validierung von Ranglisten-Sortierung, Wurm-Nachrechnung aus Stapeln, leerem Grill, Grill-Konsistenz und Aktionen-nach-Ende→`ERROR`; (2) Mensch + normal-Bot bis `GAME_OVER` (Bot über 800-ms-Engine, `waitHumanTurn` mit Silence-Erkennung).
@@ -112,7 +133,7 @@ Server → Client: `WELCOME, JOINED {code,playerId,token}, REJOINED, PLAYER_JOIN
 - [x] Integrationstests (Phase 8)
 - [ ] LAN-Test mit mehreren Geräten (Phase 9, Checkliste bereit)
 ### Aktuell
-Phase 8 abgeschlossen (57/57 Tests grün). Offen: echter LAN-Test mit 2+ Geräten (Phase 9).
+Phase 8 abgeschlossen (Suite 66/66 grün inkl. 7 RNG-Tests). Offen: echter LAN-Test mit 2+ Geräten (Phase 9) + manuelle Browser-Probe des Game-Feel-Updates (Flug/Flash/Sound).
 ### Bekannte Probleme
 Keine.
 ### Offene Aufgaben

@@ -18,6 +18,10 @@
 
     <div id="toastWrap" class="toast-wrap" aria-live="polite"></div>
     <div id="banner" class="banner hidden" role="alert"></div>
+    <!-- Großes Event-Feedback (STEAL!/BUST!/GEWONNEN!/DU BIST DRAN) -->
+    <div id="bigFlash" class="bigflash hidden" role="status" aria-live="assertive"><span id="bigFlashText"></span></div>
+
+    <!-- Inline-SVG: Bratwurm für den Wurm-Würfel (statt Emoji-Text) -->
 
     <!-- Startmenü -->
     <section id="screen-menu" class="screen card">
@@ -63,33 +67,71 @@
       <p id="lobbyHint" class="hint">Mindestens 2 Spieler nötig (Bots zählen mit).</p>
     </section>
 
-    <!-- Spiel -->
+    <!-- Spieltisch -->
     <section id="screen-game" class="screen hidden">
-      <div id="playerBar" class="player-bar"></div>
-      <div class="card">
-        <h2>Bratwurmgrill</h2>
-        <div id="grill" class="grill"></div>
-      </div>
-      <div class="table-wrap">
-        <div class="card turn-card">
-          <h2 id="turnTitle">Zug</h2>
-          <p id="scoreLine" class="score-line"></p>
-          <p id="wormLine" class="worm-line"></p>
-          <h3>Geworfene Würfel</h3>
-          <div id="rolledDice" class="dice-row"></div>
-          <h3>Beiseitegelegt</h3>
-          <div id="setAside" class="dice-row"></div>
-          <div class="btn-row">
-            <button id="btnRoll" class="btn primary">🎲 Würfeln</button>
-            <button id="btnTake" class="btn">Nehmen / Beenden</button>
+      <div class="table" id="table">
+        <!-- Oberer Bereich: Gegner -->
+        <div class="table-top" id="oppZone">
+          <div class="seat seat-top" id="oppSeat">
+            <div class="seat-info" id="oppInfo"></div>
+            <div class="seat-stack" id="oppStack" aria-label="Stapel des Gegners"></div>
+          </div>
+          <div class="dice-slot dice-slot-top" id="diceSlotTop" aria-label="Würfelbereich oben"></div>
+        </div>
+
+        <!-- Weitere Mitspieler (ab 3 Spielern) kompakt an der Seite -->
+        <div class="rail" id="sideRail" aria-label="Weitere Spieler"></div>
+
+        <!-- Mitte: Grill bleibt immer zentral -->
+        <div class="grill-board" id="grillBoard">
+          <div class="grill-title" aria-hidden="true">Bratwurmgrill</div>
+          <div id="grill" class="grill"></div>
+        </div>
+
+        <!-- Unten: Würfel-Slot + eigener Bereich -->
+        <div class="dice-slot dice-slot-bottom" id="diceSlotBottom" aria-label="Würfelbereich unten"></div>
+        <div class="table-bottom" id="ownZone">
+          <div class="seat seat-bottom" id="ownSeat">
+            <div class="seat-info" id="ownInfo"></div>
+            <div class="seat-stack" id="ownStack" aria-label="Eigener Stapel"></div>
           </div>
         </div>
-        <div class="card">
-          <h2>Stapel</h2>
-          <div id="stacks" class="stacks"></div>
-          <h2>Ereignisse</h2>
-          <ul id="eventFeed" class="event-feed"></ul>
+
+        <!-- Das eine Würfelfeld: wandert per JS zwischen oben/unten zum aktiven Spieler -->
+        <div class="dice-table" id="diceTable">
+          <div class="dice-head">
+            <span id="turnTitle" class="dice-turn">Zug</span>
+            <span id="scoreLine" class="score-line"></span>
+            <span id="wormLine" class="worm-line"></span>
+          </div>
+          <div class="dice-label">Geworfen – tippen zum Beiseitelegen</div>
+          <div id="rolledDice" class="dice-row"></div>
+          <div class="dice-label">Beiseitegelegt</div>
+          <div id="setAside" class="dice-row set-aside"></div>
+          <div class="btn-row dice-actions">
+            <button id="btnRoll" class="btn primary dice-btn">🎲 Würfeln</button>
+            <button id="btnTake" class="btn dice-btn">Nehmen / Beenden</button>
+          </div>
         </div>
+
+        <!-- Kompakte Bottom-Bar für Sekundärinfos -->
+        <footer class="bottombar" id="bottomBar">
+          <span id="bbPlayers" class="bb-item"></span>
+          <span id="bbWorms" class="bb-item"></span>
+          <span id="bbTurn" class="bb-item"></span>
+          <details class="bb-more">
+            <summary title="Mehr Infos">⋯</summary>
+            <div class="bb-detail">
+              <span id="bbCode" class="bb-item"></span>
+              <button id="btnSound" class="btn ghost bb-leave" title="Sound an/aus">🔊</button>
+              <button id="btnLeaveGame" class="btn ghost bb-leave">Menü</button>
+            </div>
+          </details>
+        </footer>
+        <details class="table-log">
+          <summary>Ereignisse</summary>
+          <ul id="eventFeed" class="event-feed"></ul>
+        </details>
       </div>
     </section>
 
@@ -117,15 +159,28 @@
       </div>
     </div>
 
-    <!-- Grill-oder-Steal-Wahl -->
+    <!-- Grill-oder-Steal-Wahl (als Spieltisch-Panel, Steine werden zusätzlich hervorgehoben) -->
     <div id="choiceOverlay" class="overlay hidden">
-      <div class="card">
+      <div class="card choice-card">
         <h2>Exakt passend – wähle!</h2>
         <p id="choiceText"></p>
         <div id="choiceBtns" class="btn-row"></div>
       </div>
     </div>
   </main>
+  <!-- Bratwurm-Symbol für Wurm-Würfel (eigene Zeichnung: Erdwurm, segmentiert).
+       Das mitgelieferte Hotdog-SVG wurde bewusst NICHT verwendet (Foto-Trace mit
+       weißem Hintergrund, passt nicht zum Spieltisch-Konzept). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="wormIcon" viewBox="0 0 64 64">
+      <path d="M12 48 C15 32 27 20 46 19" fill="none" stroke="#a34a2e" stroke-width="14" stroke-linecap="round"/>
+      <path d="M14 44 C18 32 28 24 42 22" fill="none" stroke="#d98a5f" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+      <path d="M24 38 L28 28 M33 31 L36 21 M42 26 L44 17" fill="none" stroke="#7e3418" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="48" cy="19" r="7.5" fill="#b65a32"/>
+      <circle cx="50.5" cy="17" r="2.2" fill="#fff"/>
+      <circle cx="50.8" cy="17.2" r="1.1" fill="#2b1a10"/>
+    </symbol>
+  </svg>
   <script src="app.js"></script>
 </body>
 </html>

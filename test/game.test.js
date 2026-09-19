@@ -397,3 +397,26 @@ test('canTake meldet needChoice und fallback', () => {
   assert.equal(c.needChoice, true);
   assert.equal(c.options.length, 2);
 });
+
+test('canTake ohne Wurm → nicht nehmen (Client sperrt Nehmen)', () => {
+  const game = newGame();
+  g.rollDice(game, { dice: ['1', '1', '2', '3', '4', '5', '2', '3'] });
+  g.pickValue(game, '1');
+  const c = g.canTake(game);
+  assert.equal(c.ok, false);
+  assert.match(c.reason, /Wurm/);
+});
+
+test('canTake mit Wurm, aber Score unerreichbar → nicht nehmen', () => {
+  const game = newGame();
+  for (const t of game.grill) if (t.value !== 36) t.faceUp = false;
+  g.rollDice(game, { dice: ['5', '5', '4', '4', '1', '2', '3', 'W'] });
+  g.pickValue(game, '5'); // 10
+  g.rollDice(game, { dice: ['4', '4', '1', '2', '3', 'W'] });
+  g.pickValue(game, '4'); // 18
+  g.rollDice(game, { dice: ['W', '1', '2', '3'] });
+  g.pickValue(game, 'W'); // 23 → nur 36 offen, nichts exakt/niedriger
+  assert.equal(g.hasWorm(game), true);
+  const c = g.canTake(game);
+  assert.equal(c.ok, false);
+});

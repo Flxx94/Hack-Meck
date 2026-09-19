@@ -3,13 +3,14 @@
  * Wer den Stil ändern will, ändert nur die Variablen unten
  * (Farben, Abstände, Radien, Schrift). Kein Selektor weiter unten
  * enthält hartcodierte Farben – alles läuft über var(--…).
+ * Grundidee: warmer Holz-Spieltisch mit Filzmitte, echte Spielsteine.
  * ===================================================================== */
 :root {
   color-scheme: light;
 
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
 
-  --bg: #f6efe3;
+  --bg: #4a3421;
   --bg-card: #fffdf8;
   --ink: #3a2a1a;
   --muted: #8a7660;
@@ -23,7 +24,17 @@
   --bad: #c62828;
   --warn: #b7791f;
 
+  /* Spieltisch */
+  --felt: #2e6b46;
+  --felt-dark: #245239;
+  --felt-line: rgba(255, 248, 236, 0.22);
+  --wood: #6b4a2c;
+  --wood-dark: #4e3320;
+  --seat-bg: rgba(255, 253, 248, 0.92);
+  --seat-active: #ffcf5c;
+
   --tile-bg: #fff8ec;
+  --tile-edge: #c9a86a;
   --tile-taken: #d8cbb4;
   --tile-down: #6d5c48;
   --tile-glow: #ffcf5c;
@@ -39,14 +50,16 @@
   --gap: 12px;
   --pad: 16px;
   --touch: 44px;
+  --die-size: 68px;
   --shadow: 0 2px 10px rgba(58, 42, 26, 0.12);
+  --table-shadow: 0 6px 28px rgba(0, 0, 0, 0.35);
   --maxw: 920px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #1d1610;
+    --bg: #171008;
     --bg-card: #2a2016;
     --ink: #f3e7d3;
     --muted: #b3a183;
@@ -54,7 +67,14 @@
     --accent: #e08a3c;
     --accent-hover: #f09a4c;
     --accent-ink: #241407;
+    --felt: #22402f;
+    --felt-dark: #182b21;
+    --felt-line: rgba(243, 231, 211, 0.16);
+    --wood: #4e3a26;
+    --wood-dark: #33241a;
+    --seat-bg: rgba(42, 32, 22, 0.92);
     --tile-bg: #3a2d1d;
+    --tile-edge: #7a6238;
     --tile-taken: #2c2318;
     --tile-down: #171008;
     --die-bg: #4a3a26;
@@ -80,12 +100,14 @@ body {
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: var(--gap);
+  color: var(--accent-ink);
 }
-.topbar h1 { margin: 0; font-size: 1.5rem; }
+.topbar h1 { margin: 0; font-size: 1.3rem; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
 .room-badge {
   background: var(--chip-bg); border: 1px solid var(--line);
   padding: 4px 12px; border-radius: 999px; font-weight: bold; letter-spacing: 2px;
+  color: var(--ink);
 }
 .conn-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--bad); }
 .conn-dot.on { background: var(--good); }
@@ -123,7 +145,7 @@ body {
 .hint { color: var(--muted); }
 .resume-box { border-top: 1px solid var(--line); margin-top: var(--gap); padding-top: var(--gap); }
 
-/* ---------- Lobby / Spieler ---------- */
+/* ---------- Lobby ---------- */
 .player-list { list-style: none; padding: 0; margin: 0 0 var(--gap); }
 .player-list li {
   padding: 10px 12px; border: 1px solid var(--line);
@@ -131,36 +153,130 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   min-height: var(--touch);
 }
-.player-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--gap); }
-.player-chip {
-  background: var(--chip-bg); border: 2px solid var(--line);
-  border-radius: var(--radius-small); padding: 8px 10px; min-width: 120px;
-}
-.player-chip .nm { font-weight: bold; display: block; }
-.player-chip .sub { color: var(--muted); font-size: 0.85rem; }
-.player-chip.me { border-style: dashed; }
-.player-chip.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--tile-glow);
-  animation: pulse 1.6s ease-in-out infinite;
-}
-.player-chip.left { opacity: 0.5; }
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--tile-glow); }
-  50% { box-shadow: 0 0 0 5px var(--tile-glow); }
-}
 
-/* ---------- Grill ---------- */
-.grill { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
-.tile {
-  border-radius: var(--radius-small); border: 2px solid var(--line);
-  background: var(--tile-bg); padding: 8px 4px; text-align: center;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+/* =====================================================================
+ * SPIELTISCH – Hierarchie: Würfel → Grill → aktiver Spieler → Aktionen
+ * → Spielerinfos → Zusatzinfos. Grill bleibt immer in der Mitte,
+ * das EINE Würfelfeld (#diceTable) wandert zum aktiven Spieler.
+ * ===================================================================== */
+.table {
+  background: var(--felt);
+  border: 10px solid var(--wood);
+  outline: 2px solid var(--wood-dark);
+  border-radius: 22px;
+  box-shadow: var(--table-shadow);
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-height: 70vh;
 }
-.tile .v { font-size: 1.3rem; font-weight: bold; display: block; }
-.tile .w { color: var(--muted); font-size: 0.9rem; }
-.tile.taken { background: var(--tile-taken); opacity: 0.55; }
-.tile.down { background: var(--tile-down); color: var(--tile-down); }
+.table-top, .table-bottom { display: flex; flex-direction: column; gap: 8px; }
+
+/* Sitzplätze: Info links, eigener Stapel rechts */
+.seat {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  background: var(--seat-bg);
+  border: 2px solid var(--felt-line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  min-height: var(--touch);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.seat .who { font-weight: bold; display: flex; align-items: center; gap: 8px; }
+.seat .sub { color: var(--muted); font-size: 0.85rem; }
+.seat .turn-pill {
+  display: none;
+  font-size: 0.8rem; font-weight: bold;
+  background: var(--accent); color: var(--accent-ink);
+  border-radius: 999px; padding: 3px 12px; margin-left: 8px;
+  white-space: nowrap;
+}
+.seat.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--seat-active); }
+.seat.active .turn-pill { display: inline-block; }
+.seat.dim { opacity: 0.75; }
+.seat-stack { display: flex; align-items: flex-end; }
+
+/* Kompakte Stapel-Darstellung: überlappende Steine, oben sichtbar */
+.pile { display: flex; align-items: flex-end; padding-left: 14px; }
+.pile .stone {
+  width: 52px; height: 62px; margin-left: -14px;
+  background: var(--tile-bg);
+  border: 2px solid var(--tile-edge);
+  border-bottom-width: 4px;
+  border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  font-weight: bold;
+}
+.pile .stone .sv { font-size: 1.05rem; line-height: 1; }
+.pile .stone .sw { font-size: 0.7rem; line-height: 1.2; }
+.pile .stone.top { border-color: var(--accent); transform: translateY(-4px); }
+.pile-empty { color: var(--felt-line); font-size: 0.85rem; }
+
+/* Seitenleiste: übrige Spieler, bewusst klein */
+.rail { display: flex; flex-wrap: wrap; gap: 6px; }
+.rail:empty { display: none; }
+.rail-chip {
+  background: var(--seat-bg); border: 1px solid var(--felt-line);
+  border-radius: 999px; padding: 4px 10px; font-size: 0.8rem;
+  display: flex; gap: 6px; align-items: center;
+  max-width: 100%;
+}
+.rail-chip.active { border-color: var(--accent); font-weight: bold; }
+
+/* Würfel-Slots: leere Seite kollabiert, Würfel „teleportieren“ nie sichtbar */
+.dice-slot { display: flex; justify-content: center; min-height: 0; }
+.dice-slot:empty { display: none; }
+
+/* Das wandernde Würfelfeld */
+.dice-table {
+  background: var(--seat-bg);
+  border: 2px solid var(--tile-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+  align-self: center;
+  width: min(100%, 560px);
+}
+.dice-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.dice-turn { font-weight: bold; font-size: 1.05rem; }
+.dice-table.mine .dice-turn { color: var(--accent); }
+.dice-label { color: var(--muted); font-size: 0.8rem; }
+.score-line { font-size: 1.1rem; font-weight: bold; }
+.worm-line { font-size: 0.9rem; }
+.worm-line.ok { color: var(--good); font-weight: bold; }
+.worm-line.missing { color: var(--bad); }
+
+/* ---------- Grill (fixe Mitte) ---------- */
+.grill-board {
+  background: var(--felt-dark);
+  border: 3px solid var(--wood-dark);
+  border-radius: var(--radius);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.35);
+  padding: 10px;
+}
+.grill-title {
+  text-align: center; letter-spacing: 3px; text-transform: uppercase;
+  font-size: 0.75rem; color: var(--felt-line); margin-bottom: 8px;
+}
+.grill { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+.tile {
+  border-radius: var(--radius-small);
+  border: 2px solid var(--tile-edge);
+  border-bottom-width: 5px;
+  background: var(--tile-bg);
+  padding: 8px 2px 6px; text-align: center;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+}
+.tile .v { font-size: 1.35rem; font-weight: bold; display: block; line-height: 1.1; }
+.tile .w { font-size: 0.8rem; line-height: 1.2; display: block; min-height: 1.1em; }
+.tile.taken { background: var(--tile-taken); opacity: 0.45; box-shadow: none; }
+.tile.down { background: var(--tile-down); border-color: var(--wood-dark); }
+.tile.down .v { color: transparent; }
 .tile.down .w { color: transparent; }
 .tile.flash { animation: tileflash 1.2s ease; border-color: var(--accent); }
 @keyframes tileflash {
@@ -168,22 +284,40 @@ body {
   40% { transform: scale(1.12); box-shadow: 0 0 0 8px transparent; }
   100% { transform: scale(1); }
 }
+/* Steal-Auswahl: relevante Steine leuchten, Rest tritt zurück */
+.table.choosing .grill-board { box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.35), 0 0 0 3px var(--accent); }
+.table.choosing .tile:not(.stealable) { opacity: 0.45; }
+.tile.stealable {
+  border-color: var(--accent); cursor: pointer;
+  animation: stealpulse 1.4s ease-in-out infinite;
+}
+.seat-stack.stealable .pile .stone.top { border-color: var(--accent); box-shadow: 0 0 0 3px var(--tile-glow); }
+@keyframes stealpulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--tile-glow); }
+  50% { box-shadow: 0 0 0 6px var(--tile-glow); }
+}
 
-/* ---------- Würfel ---------- */
-.dice-row { display: flex; flex-wrap: wrap; gap: 8px; min-height: 60px; margin-bottom: 8px; }
+/* ---------- Würfel (wichtigstes Element) ---------- */
+.dice-row { display: flex; flex-wrap: wrap; gap: 10px; min-height: 76px; margin-bottom: 4px; align-items: center; }
+.dice-row.set-aside { min-height: 60px; }
 .die {
-  width: 56px; height: 56px; font-size: 1.5rem; font-weight: bold;
-  border-radius: var(--radius-small); border: 2px solid var(--line);
+  width: var(--die-size); height: var(--die-size);
+  font-size: 1.7rem; font-weight: bold;
+  border-radius: 12px; border: 2px solid var(--tile-edge);
+  border-bottom-width: 5px;
   background: var(--die-bg); color: var(--ink);
   display: flex; align-items: center; justify-content: center;
-  transition: transform 0.1s ease, background 0.15s ease;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease, background 0.15s ease, box-shadow 0.2s ease;
 }
 button.die.pickable {
   background: var(--die-pickable); border-color: var(--accent); cursor: pointer;
-  min-width: 56px; min-height: 56px;
+  min-width: var(--die-size); min-height: var(--die-size);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
 }
-button.die.pickable:hover { transform: translateY(-3px) scale(1.05); }
-.die.locked { background: var(--die-disabled); opacity: 0.6; }
+button.die.pickable:hover { transform: translateY(-5px) scale(1.05); }
+.die.locked { background: var(--die-disabled); opacity: 0.65; box-shadow: none; }
 .die.just-rolled { animation: rollin 0.45s ease backwards; }
 @keyframes rollin {
   0% { transform: translateY(-18px) rotate(-30deg) scale(0.6); opacity: 0; }
@@ -194,39 +328,46 @@ button.die.pickable:hover { transform: translateY(-3px) scale(1.05); }
   display: flex; align-items: center; gap: 4px;
   background: var(--die-disabled); border-radius: var(--radius-small); padding: 4px 8px;
 }
+.set-group .die { width: 48px; height: 48px; font-size: 1.3rem; }
 .set-group .n { color: var(--muted); font-size: 0.85rem; }
 .empty-note { color: var(--muted); }
 
-.score-line { font-size: 1.2rem; font-weight: bold; }
-.worm-line.ok { color: var(--good); font-weight: bold; }
-.worm-line.missing { color: var(--bad); }
-
-.table-wrap { display: grid; grid-template-columns: 1fr; gap: var(--gap); }
-@media (min-width: 760px) {
-  .table-wrap { grid-template-columns: 1.2fr 1fr; }
+/* Aktionen gehören zum Tisch, nicht zum Dashboard */
+.dice-actions { margin-bottom: 0; }
+.dice-btn {
+  flex: 1 1 180px;
+  font-size: 1.05rem; font-weight: bold;
+  border-bottom-width: 4px;
 }
+.dice-btn:disabled { opacity: 0.4; }
 
-/* ---------- Stapel & Feed ---------- */
-.stacks { display: flex; flex-direction: column; gap: 8px; }
-.stack-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.stack-row .who { min-width: 90px; font-weight: bold; }
-.mini-tile {
-  background: var(--tile-bg); border: 1px solid var(--line);
-  border-radius: 6px; padding: 4px 8px; font-size: 0.9rem;
+/* ---------- Bottom-Bar + Log (sekundär, unauffällig) ---------- */
+.bottombar {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--felt-line); font-size: 0.8rem;
+  border-top: 1px solid var(--felt-line);
+  padding-top: 8px;
+  flex-wrap: wrap;
 }
-.mini-tile.top { border-color: var(--accent); border-width: 2px; font-weight: bold; }
-.event-feed { list-style: none; padding: 0; margin: 0; max-height: 180px; overflow-y: auto; }
-.event-feed li { padding: 4px 0; border-bottom: 1px dotted var(--line); font-size: 0.9rem; }
+.bb-item { white-space: nowrap; }
+.bb-more { margin-left: auto; position: relative; }
+.bb-more summary { cursor: pointer; list-style: none; min-width: var(--touch); min-height: var(--touch); display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+.bb-detail { display: flex; gap: 8px; align-items: center; }
+.bb-leave { min-height: var(--touch); color: var(--felt-line); border-color: var(--felt-line); font-size: 0.8rem; padding: 6px 12px; }
+.table-log { color: var(--felt-line); font-size: 0.8rem; }
+.table-log summary { cursor: pointer; min-height: var(--touch); display: inline-flex; align-items: center; }
+.event-feed { list-style: none; padding: 0; margin: 4px 0 0; max-height: 120px; overflow-y: auto; }
+.event-feed li { padding: 3px 0; border-bottom: 1px dotted var(--felt-line); font-size: 0.8rem; }
 
 /* ---------- Banner / Toast / Overlay ---------- */
 .banner {
-  border-radius: var(--radius); padding: 14px 18px; margin-bottom: var(--gap);
-  font-size: 1.15rem; font-weight: bold; text-align: center;
+  border-radius: var(--radius); padding: 12px 16px; margin-bottom: var(--gap);
+  font-size: 1.05rem; font-weight: bold; text-align: center;
   animation: bannerpop 0.35s ease;
 }
 .banner.bust { background: var(--bad); color: #fff; }
 .banner.take { background: var(--good); color: #fff; }
-.banner.info { background: var(--chip-bg); border: 1px solid var(--line); }
+.banner.info { background: var(--chip-bg); border: 1px solid var(--line); color: var(--ink); }
 @keyframes bannerpop {
   0% { transform: scale(0.85); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
@@ -242,8 +383,147 @@ button.die.pickable:hover { transform: translateY(-3px) scale(1.05); }
   display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--pad);
 }
 .overlay .card { max-width: 440px; width: 100%; }
+.choice-card { border: 3px solid var(--tile-edge); }
 
 /* ---------- Spielende ---------- */
 .ranking { width: 100%; border-collapse: collapse; margin-bottom: var(--gap); }
 .ranking th, .ranking td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }
 .ranking tr.winner td { font-weight: bold; }
+
+/* ---------- Responsive: Würfel nie zu klein ---------- */
+@media (max-width: 760px) {
+  :root { --die-size: 60px; }
+  .table { border-width: 6px; }
+  .grill { grid-template-columns: repeat(4, 1fr); }
+  .tile .v { font-size: 1.15rem; }
+  .seat { padding: 6px 10px; }
+}
+@media (max-width: 420px) {
+  :root { --die-size: 54px; }
+  body { padding: 8px; }
+  .table { padding: 8px; gap: 8px; }
+  .dice-table { padding: 8px; }
+  .pile .stone { width: 44px; height: 54px; }
+}
+:root {
+  --worm: #b65a32;
+  --worm-dark: #7e3418;
+  --worm-bg1: #fff4e2;
+  --worm-bg2: #ffc890;
+  --gold: #ffcf5c;
+  --pip: #2e2013;
+}
+
+/* =====================================================================
+ * GAME-FEEL – echte Würfel (Pips), Wurm-Würfel, Flug- + Flash-Animationen.
+ * Nur transform/opacity/keyframes (keine Layout-Reflows pro Frame).
+ * ===================================================================== */
+
+/* Echte Würfelpunkte: 3×3-Raster, Punkte nur an belegten Zellen. */
+.die .pips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 72%; height: 72%;
+  gap: 1px;
+}
+.die .pip { border-radius: 50%; }
+.die .pip.on {
+  background: radial-gradient(circle at 35% 30%, #5a4a38, var(--pip) 70%);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.set-group .die .pips { width: 76%; height: 76%; }
+
+/* Wurm-Würfel: warmes Orange, eigener Glow, SVG statt Text. */
+.die.worm {
+  background: linear-gradient(145deg, var(--worm-bg1), var(--worm-bg2));
+  border-color: var(--worm);
+}
+.die.worm svg { width: 76%; height: 76%; }
+button.die.pickable.worm {
+  background: linear-gradient(145deg, #fff8ea, #ffd9a8);
+  border-color: var(--accent);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(194, 87, 27, 0.35);
+}
+button.die.pickable.worm:hover { animation: wormwiggle 0.5s ease; }
+@keyframes wormwiggle {
+  0%, 100% { transform: translateY(-5px) scale(1.05) rotate(0); }
+  25% { transform: translateY(-5px) scale(1.05) rotate(-6deg); }
+  75% { transform: translateY(-5px) scale(1.05) rotate(6deg); }
+}
+
+/* Würfelwurf: Fall + Rotation + Aufprall (statt simplem Fade). */
+@keyframes rollin {
+  0% { transform: translateY(-30px) rotate(-50deg) scale(0.5); opacity: 0; }
+  55% { transform: translateY(5px) rotate(12deg) scale(1.12); opacity: 1; }
+  75% { transform: translateY(-4px) rotate(-5deg) scale(0.97); }
+  100% { transform: none; opacity: 1; }
+}
+.die.just-rolled { animation: rollin 0.5s cubic-bezier(.2,.7,.3,1.2) backwards; }
+
+/* Click-/Tap-Feedback: Hover hebt, :active drückt (schnell, <150 ms). */
+button.die.pickable:active { transform: translateY(0) scale(0.93); transition-duration: 0.05s; }
+.btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); }
+.dice-table.mine {
+  border-color: var(--accent);
+  box-shadow: var(--shadow), 0 0 0 3px rgba(194, 87, 27, 0.35);
+}
+
+/* Kartenflug: fliegender Klon zwischen Grill und Stapeln (WAAPI setzt transform). */
+.fly-clone {
+  position: fixed; z-index: 90; pointer-events: none; margin: 0;
+  border-radius: var(--radius-small);
+  border: 2px solid var(--tile-edge);
+  border-bottom-width: 5px;
+  background: var(--tile-bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-weight: bold;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+  will-change: transform, opacity;
+}
+
+/* Bildschirm-Erschütterung bei BUST. */
+.table.shake { animation: tableshake 0.5s ease; }
+@keyframes tableshake {
+  0%, 100% { transform: none; }
+  20% { transform: translate(-7px, 3px) rotate(-0.4deg); }
+  40% { transform: translate(6px, -3px); }
+  60% { transform: translate(-4px, -2px) rotate(0.4deg); }
+  80% { transform: translate(3px, 2px); }
+}
+
+/* Großes Event-Feedback in der Bildschirmmitte (auto-hide via JS). */
+.bigflash {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  padding: var(--pad); text-align: center;
+}
+.bigflash span {
+  font-size: clamp(3rem, 13vw, 6.5rem);
+  font-weight: 900; letter-spacing: 2px;
+  padding: 0.1em 0.5em;
+  border-radius: 20px;
+  animation: bigpop 1.35s ease forwards;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.25), 0 10px 34px rgba(0, 0, 0, 0.5);
+  will-change: transform, opacity;
+}
+.bigflash.k-bust span { background: rgba(198, 40, 40, 0.92); color: #fff; }
+.bigflash.k-steal span { background: rgba(194, 87, 27, 0.94); color: #fff8f0; }
+.bigflash.k-take span { background: rgba(46, 125, 50, 0.92); color: #fff; }
+.bigflash.k-win span { background: rgba(255, 207, 92, 0.95); color: #3a2a1a; }
+.bigflash.k-turn span { background: rgba(42, 32, 22, 0.88); color: var(--gold); font-size: clamp(2rem, 8vw, 4rem); }
+@keyframes bigpop {
+  0% { transform: scale(0.3) rotate(-6deg); opacity: 0; }
+  15% { transform: scale(1.15) rotate(1deg); opacity: 1; }
+  28% { transform: scale(1) rotate(0); }
+  75% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.06) translateY(-24px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .die.just-rolled, .tile.flash, .tile.stealable { animation: none; }
+  .table.shake { animation: none; }
+  .bigflash span { animation-duration: 0.01s; }
+  button.die.pickable.worm:hover { animation: none; }
+}
