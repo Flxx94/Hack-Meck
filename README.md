@@ -4,7 +4,8 @@ Webbasiertes Multiplayer-Würfelspiel nach „Heckmeck am Bratwurmeck" (Reiner K
 Spielbar gegen Bots sowie gegen andere Spieler im gleichen lokalen WLAN.
 
 > Stand: Phase 7 (spielbar: Menü, Lobby, Spiel, Spielende – im Browser gegen Bots oder im LAN).
-> Theme-Anpassung: nur `:root`-Block in `public/style.css` ändern.
+> Design: Kartentisch-UI mit Light/Dark-Mode (Umschalter oben rechts, folgt standardmäßig dem System).
+> Theme-Anpassung: nur die Token-Blöcke (`:root` / Dark-Varianten) am Anfang von `public/style.css` ändern.
 
 ## Installation
 
